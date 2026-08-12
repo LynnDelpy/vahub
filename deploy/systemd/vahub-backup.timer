@@ -1,0 +1,16 @@
+[Unit]
+Description=Daily vahub database backup
+Documentation=https://github.com/LynnDelpy/vahub
+
+[Timer]
+OnCalendar=daily
+# A machine that was off at 03:00 still gets its backup when it comes back.
+Persistent=true
+# Nothing here is time critical, and a spread-out start keeps the backup off the
+# same minute as every other daily job on the box.
+RandomizedDelaySec=30m
+AccuracySec=5m
+Unit=vahub-backup.service
+
+[Install]
+WantedBy=timers.target

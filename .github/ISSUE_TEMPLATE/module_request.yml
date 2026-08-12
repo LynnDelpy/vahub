@@ -1,0 +1,93 @@
+name: Module request
+description: Ask for a module, or propose one you want listed in the registry
+labels: [module]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A module is a separate program that speaks MCP over stdin and stdout.
+        The hub spawns it, hands it only the environment variables its manifest
+        declares, and gates every call it exposes. It does not have to live in
+        this repository and it does not have to be written in Python.
+
+        `docs/writing-modules.md` describes the contract and walks through a
+        complete module. `CONTRIBUTING.md` explains how one gets into the
+        registry.
+
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What this is
+      options:
+        - I want a module that does not exist yet
+        - I have written one and want it in the registry
+    validations:
+      required: true
+
+  - type: input
+    id: name
+    attributes:
+      label: Module name
+      description: Lowercase letters, digits, underscore and hyphen. This is the name used in `vahub module add`.
+      placeholder: calendar
+    validations:
+      required: true
+
+  - type: textarea
+    id: purpose
+    attributes:
+      label: What it does
+      description: One or two sentences, the way it would read in the registry index.
+    validations:
+      required: true
+
+  - type: textarea
+    id: tools
+    attributes:
+      label: Tools and their classes
+      description: >
+        Every tool the module offers, with the class you think it belongs to.
+        `read` observes, `write` changes something recoverable, `destructive`
+        changes something that is awkward or unsafe to undo. Unlocking a door
+        is destructive. Turning on a light is a write.
+      render: yaml
+      placeholder: |
+        list_events: { class: read }
+        create_event: { class: write }
+        delete_event: { class: destructive }
+    validations:
+      required: true
+
+  - type: textarea
+    id: config
+    attributes:
+      label: Configuration it needs
+      description: >
+        The environment variable names only, never the values. Say which of
+        them are secrets, so they can be listed under `audit.redact`.
+      placeholder: |
+        required: CALDAV_URL, CALDAV_USER, CALDAV_PASSWORD
+        secret: CALDAV_PASSWORD
+    validations:
+      required: true
+
+  - type: textarea
+    id: blast-radius
+    attributes:
+      label: What the credential can reach
+      description: >
+        If the token the module needs is scoped to less than the whole account,
+        say so. If it is admin or nothing, say that instead. This decides how
+        carefully the policy examples for the module have to constrain
+        arguments.
+    validations:
+      required: true
+
+  - type: input
+    id: source
+    attributes:
+      label: Source
+      description: >
+        For an existing module, the repository and the tag or commit it would
+        be pinned to. A moving branch is not accepted as a registry source.
+      placeholder: https://github.com/you/vahub-mod-calendar at v0.1.0

@@ -1,0 +1,49 @@
+version: 2
+
+updates:
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "05:00"
+    open-pull-requests-limit: 5
+    labels: [dependencies]
+    commit-message:
+      prefix: "build"
+      include: scope
+    groups:
+      # One PR for the development toolchain. A ruff or mypy bump on its own is
+      # rarely worth a separate review.
+      dev-tools:
+        patterns:
+          - pytest*
+          - ruff
+          - mypy
+          - types-*
+      runtime-patches:
+        patterns: ["*"]
+        update-types: [patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "05:00"
+    labels: [dependencies, ci]
+    commit-message:
+      prefix: "ci"
+    groups:
+      actions:
+        patterns: ["*"]
+
+  - package-ecosystem: docker
+    directory: /deploy/docker
+    schedule:
+      interval: weekly
+      day: monday
+      time: "05:00"
+    labels: [dependencies, docker]
+    commit-message:
+      prefix: "build"

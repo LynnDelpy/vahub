@@ -1,0 +1,42 @@
+# Developer overlay. Never use it on a machine you care about: it turns on an
+# unauthenticated endpoint that calls tools directly.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up vahub
+#
+# Naming `vahub` starts the hub alone, without the proxy: with the port on
+# loopback there is nothing for TLS to protect, and skipping the proxy means you
+# do not need certificates to get started.
+#
+# It still reads ./vahub.yaml; `cp ../../examples/vahub.minimal.yaml ./vahub.yaml`
+# is enough to get a first run with the mock model.
+services:
+  vahub:
+    # The source tree shadows the installed package: PYTHONPATH is searched
+    # before site-packages, so an edit on the host is live in the container
+    # after a restart, while the third-party dependencies still come from the
+    # image's virtual environment.
+    volumes:
+      - ../../src:/src:ro
+    environment:
+      PYTHONPATH: /src
+      # /api/dev/call executes a tool without the agent. It is still policy
+      # gated, but it is unauthenticated, which is exactly why it is off in the
+      # production file and exposed on loopback only here.
+      VAHUB_WEB__DEV_TOOLS_ENDPOINT: "true"
+      VAHUB_HUB__LOG_LEVEL: DEBUG
+      VAHUB_HUB__LOG_FORMAT: console
+      VAHUB_WEB__ORIGIN_ALLOWLIST: '["http://localhost:${VAHUB_DEV_PORT:-8080}","http://127.0.0.1:${VAHUB_DEV_PORT:-8080}"]'
+    ports:
+      # Loopback only. This is the unauthenticated path into the hub.
+      - "127.0.0.1:${VAHUB_DEV_PORT:-8080}:8080"
+    # A read-only root filesystem gets in the way when you are installing a
+    # module or dropping a file in to test something.
+    read_only: false
+    # A crash during development should be visible, not papered over by a
+    # restart loop.
+    restart: "no"
+    deploy:
+      resources:
+        limits:
+          cpus: "4.0"
+          memory: 2g

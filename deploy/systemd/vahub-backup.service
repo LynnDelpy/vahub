@@ -1,0 +1,62 @@
+[Unit]
+Description=vahub database backup (sqlite VACUUM INTO)
+Documentation=https://github.com/LynnDelpy/vahub
+# Deliberately not Requires=vahub.service: a backup of a stopped hub is still a
+# backup, and a failing hub is exactly when you want yesterday's database.
+
+[Service]
+Type=oneshot
+User=vahub
+Group=vahub
+
+# VACUUM INTO, not `cp`. SQLite in WAL mode keeps recent transactions in
+# vahub.db-wal, so copying vahub.db while the hub is running yields a file that
+# is missing them, or worse, a torn page from a checkpoint that happened
+# mid-copy. VACUUM INTO takes a read transaction and writes a consistent,
+# defragmented copy while the hub keeps working.
+#
+# The file is named for the day, so a run that repeats within a day replaces its
+# own output instead of filling the disk.
+ExecStart=/opt/vahub/venv/bin/python -c "import datetime, pathlib, sqlite3, sys; src, out = sys.argv[1], pathlib.Path(sys.argv[2]); dst = out / ('vahub-' + datetime.date.today().isoformat() + '.db'); dst.unlink(missing_ok=True); db = sqlite3.connect(src); db.execute('VACUUM INTO ?', (str(dst),)); db.close(); print('wrote', dst, dst.stat().st_size, 'bytes')" /var/lib/vahub/vahub.db /var/backups/vahub
+
+# Retention. Two weeks of daily copies of a database this size costs very little,
+# and a mistake that needs restoring is usually noticed within days.
+ExecStartPost=/usr/bin/find /var/backups/vahub -maxdepth 1 -type f -name "vahub-*.db" -mtime +14 -delete
+
+# Backups compete with the assistant for disk; the assistant wins.
+Nice=10
+IOSchedulingClass=idle
+
+# --- sandbox --------------------------------------------------------------
+# Same posture as the hub, minus everything a copy job does not need. It reads
+# one file and writes another, and it never talks to the network.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+PrivateNetwork=yes
+ProtectProc=invisible
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictAddressFamilies=AF_UNIX
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+CapabilityBoundingSet=
+AmbientCapabilities=
+UMask=0077
+
+# The state directory is opened read-write because VACUUM INTO runs a real
+# transaction against the live database, which may create or update the WAL.
+# /var/backups/vahub must exist and be owned by the service user; see README.md.
+ReadWritePaths=/var/lib/vahub /var/backups/vahub

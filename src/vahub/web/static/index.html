@@ -1,0 +1,647 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>vahub console</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='7' fill='none' stroke='%232f6feb' stroke-width='2'/%3E%3C/svg%3E" />
+  <style nonce="__CSP_NONCE__">
+    :root {
+      color-scheme: light dark;
+      --bg: #fbfbfa; --panel: #ffffff; --fg: #1b1b1f; --muted: #6b6b73; --line: #e3e3e8;
+      --soft: #f3f3f5; --accent: #2f6feb; --ok: #1a7f37; --warn: #9a6700; --err: #cf222e;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0f1115; --panel: #151922; --fg: #e6e6ea; --muted: #9a9aa6; --line: #262b36;
+        --soft: #1b2029; --accent: #58a6ff; --ok: #3fb950; --warn: #d29922; --err: #f85149;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; padding: 1.5rem; background: var(--bg); color: var(--fg);
+      font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    }
+    header { display: flex; align-items: baseline; gap: .6rem; margin-bottom: 1rem; }
+    h1 { font-size: 1.05rem; font-weight: 600; margin: 0; letter-spacing: .01em; }
+    .sub { color: var(--muted); font-size: .85rem; }
+    .conn { margin-left: auto; font-size: .78rem; color: var(--muted); display: flex; align-items: center; gap: .4rem; }
+    .conn .dot { width: .55rem; height: .55rem; border-radius: 50%; background: var(--muted); }
+    .conn.live .dot { background: var(--ok); }
+    .conn.down .dot { background: var(--err); }
+    .grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1rem; align-items: start; }
+    @media (max-width: 900px) { .grid { grid-template-columns: minmax(0, 1fr); } }
+    .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 1rem; margin-bottom: 1rem; }
+    .card > h2 {
+      font-size: .72rem; text-transform: uppercase; letter-spacing: .07em; color: var(--muted);
+      margin: 0 0 .75rem; font-weight: 600;
+    }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { text-align: left; padding: .38rem .5rem; border-bottom: 1px solid var(--line); font-size: .84rem; vertical-align: top; }
+    th { font-size: .68rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 600; }
+    tr:last-child td { border-bottom: none; }
+    td.wrap { word-break: break-word; }
+    .empty { color: var(--muted); font-size: .84rem; padding: .4rem .1rem; }
+    .state { display: inline-flex; align-items: center; gap: .4rem; text-transform: capitalize; }
+    .state .dot { width: .6rem; height: .6rem; border-radius: 50%; background: var(--muted); flex: none; }
+    .state.ready .dot { background: var(--ok); }
+    .state.degraded .dot, .state.starting .dot { background: var(--warn); }
+    .state.failed .dot { background: var(--err); }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .78rem; }
+    .tabs { display: flex; gap: .3rem; margin-bottom: .7rem; flex-wrap: wrap; }
+    .tabs button {
+      font: inherit; font-size: .78rem; padding: .25rem .6rem; border-radius: 999px; cursor: pointer;
+      border: 1px solid var(--line); background: transparent; color: var(--muted);
+    }
+    .tabs button.on { background: var(--soft); color: var(--fg); }
+    .panel { display: none; }
+    .panel.on { display: block; }
+    #log {
+      height: 190px; overflow-y: auto; background: var(--soft); border-radius: 6px; padding: .5rem .6rem;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .76rem;
+      white-space: pre-wrap; word-break: break-word;
+    }
+    #chat { display: flex; flex-direction: column; height: 30rem; }
+    #messages { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: .5rem; padding-right: .25rem; }
+    .msg { padding: .45rem .65rem; border-radius: 9px; font-size: .88rem; max-width: 88%; white-space: pre-wrap; word-break: break-word; }
+    .msg.user { align-self: flex-end; background: var(--accent); color: #fff; }
+    .msg.assistant { align-self: flex-start; background: var(--soft); }
+    .msg.note { align-self: flex-start; background: transparent; color: var(--muted); font-size: .78rem; }
+    .step {
+      align-self: flex-start; max-width: 88%; color: var(--muted); font-size: .74rem;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      white-space: pre-wrap; word-break: break-word;
+    }
+    .composer { display: flex; gap: .45rem; margin-top: .7rem; }
+    .composer input[type=text] {
+      flex: 1; min-width: 0; padding: .5rem .65rem; border-radius: 7px; border: 1px solid var(--line);
+      background: var(--bg); color: var(--fg); font: inherit; font-size: .9rem;
+    }
+    button.action {
+      font: inherit; font-size: .85rem; padding: .5rem .8rem; border-radius: 7px; border: 1px solid transparent;
+      background: var(--accent); color: #fff; cursor: pointer;
+    }
+    button.action:disabled { opacity: .5; cursor: default; }
+    button.ghost { background: transparent; color: var(--fg); border-color: var(--line); }
+    button.mic { display: flex; align-items: center; justify-content: center; padding: .5rem .7rem; }
+    button.mic svg { width: 1rem; height: 1rem; fill: currentColor; }
+    button.mic .stop { display: none; }
+    button.mic.rec { background: var(--err); }
+    button.mic.rec .idle { display: none; }
+    button.mic.rec .stop { display: block; }
+    .hint { font-size: .75rem; color: var(--muted); margin-top: .5rem; display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; }
+    .hint label { display: inline-flex; align-items: center; gap: .3rem; cursor: pointer; }
+    .confirm {
+      border: 1px solid var(--warn); border-radius: 9px; padding: .6rem .8rem; margin-bottom: .5rem;
+      display: flex; gap: .7rem; align-items: center; flex-wrap: wrap; background: var(--panel);
+    }
+    .confirm .txt { flex: 1; min-width: 14rem; font-size: .85rem; word-break: break-word; }
+    .confirm .why { color: var(--muted); font-size: .78rem; }
+    .row-actions { display: flex; gap: .4rem; }
+    .small { font-size: .78rem; padding: .3rem .6rem; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>vahub</h1>
+    <span class="sub">hub console</span>
+    <span class="conn" id="conn"><span class="dot"></span><span id="connText">connecting</span></span>
+  </header>
+
+  <div id="pending"></div>
+
+  <div class="grid">
+    <div>
+      <div class="card" id="chat">
+        <h2>Chat</h2>
+        <div id="messages"></div>
+        <div class="composer">
+          <input id="input" type="text" placeholder="Ask something, or tell it what to do" autocomplete="off" />
+          <button id="mic" class="action ghost mic" title="Talk" aria-label="Talk">
+            <svg class="idle" viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M8 1a2.5 2.5 0 0 0-2.5 2.5v4a2.5 2.5 0 0 0 5 0v-4A2.5 2.5 0 0 0 8 1z" />
+              <path d="M3.5 7a.75.75 0 0 1 1.5 0 3 3 0 0 0 6 0 .75.75 0 0 1 1.5 0 4.5 4.5 0 0 1-3.75 4.44V14h1.75a.75.75 0 0 1 0 1.5h-5a.75.75 0 0 1 0-1.5H7.25v-2.56A4.5 4.5 0 0 1 3.5 7z" />
+            </svg>
+            <svg class="stop" viewBox="0 0 16 16" aria-hidden="true"><rect x="3" y="3" width="10" height="10" rx="2" /></svg>
+          </button>
+          <button id="send" class="action">Send</button>
+        </div>
+        <div class="hint">
+          <label><input type="checkbox" id="speak" checked /> speak replies</label>
+          <span id="voiceHint">Type or talk. The agent decides which tool to call.</span>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="card">
+        <h2>Modules</h2>
+        <table>
+          <thead><tr><th>Module</th><th>State</th><th>Version</th><th>Tools</th><th>Last error</th></tr></thead>
+          <tbody id="moduleRows"></tbody>
+        </table>
+      </div>
+
+      <div class="card">
+        <div class="tabs" id="tabs">
+          <button data-tab="log" class="on">Log</button>
+          <button data-tab="audit">Audit</button>
+          <button data-tab="schedules">Schedules</button>
+          <button data-tab="tools">Tools</button>
+        </div>
+        <div class="panel on" data-panel="log"><div id="log"></div></div>
+        <div class="panel" data-panel="audit">
+          <table>
+            <thead><tr><th>Time</th><th>Principal</th><th>Call</th><th>Decision</th><th>Result</th><th>ms</th></tr></thead>
+            <tbody id="auditRows"></tbody>
+          </table>
+        </div>
+        <div class="panel" data-panel="schedules">
+          <table>
+            <thead><tr><th>Routine</th><th>Cron</th><th>Steps</th><th>Next run</th><th></th></tr></thead>
+            <tbody id="scheduleRows"></tbody>
+          </table>
+        </div>
+        <div class="panel" data-panel="tools">
+          <table>
+            <thead><tr><th>Tool</th><th>Description</th></tr></thead>
+            <tbody id="toolRows"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script nonce="__CSP_NONCE__">
+  (function () {
+    'use strict';
+
+    // Nothing from the hub is written with innerHTML. Module names, tool names,
+    // errors and stderr lines are all produced by code the hub does not control,
+    // so every one of them reaches the page as a text node.
+    function text(value) {
+      return document.createTextNode(value === null || value === undefined ? '' : String(value));
+    }
+    function el(tag, className, content) {
+      const node = document.createElement(tag);
+      if (className) node.className = className;
+      if (content !== undefined) node.textContent = content === null ? '' : String(content);
+      return node;
+    }
+    function cell(content, className) {
+      return el('td', className || '', content);
+    }
+    function emptyRow(tbody, columns, message) {
+      const tr = document.createElement('tr');
+      const td = el('td', 'empty', message);
+      td.colSpan = columns;
+      tr.appendChild(td);
+      tbody.replaceChildren(tr);
+    }
+    async function getJSON(url) {
+      const response = await fetch(url, { headers: { accept: 'application/json' } });
+      if (!response.ok) throw new Error('HTTP ' + response.status);
+      return response.json();
+    }
+    async function postJSON(url, body) {
+      const options = { method: 'POST', headers: { accept: 'application/json' } };
+      if (body !== undefined) {
+        options.headers['content-type'] = 'application/json';
+        options.body = JSON.stringify(body);
+      }
+      const response = await fetch(url, options);
+      const data = await response.json().catch(function () { return {}; });
+      return { ok: response.ok, status: response.status, data: data };
+    }
+    function shorten(value, limit) {
+      const s = typeof value === 'string' ? value : JSON.stringify(value);
+      if (s === undefined) return '';
+      return s.length > limit ? s.slice(0, limit) + '...' : s;
+    }
+    function stamp(seconds) {
+      if (!seconds) return '';
+      return new Date(seconds * 1000).toLocaleTimeString();
+    }
+
+    // ---- modules ---------------------------------------------------------
+    const moduleRows = document.getElementById('moduleRows');
+    const modules = new Map();
+
+    function renderModules() {
+      if (modules.size === 0) {
+        emptyRow(moduleRows, 5, 'No modules installed yet.');
+        return;
+      }
+      const rows = [];
+      const sorted = Array.from(modules.values()).sort(function (a, b) {
+        return String(a.name).localeCompare(String(b.name));
+      });
+      for (const module of sorted) {
+        const tr = document.createElement('tr');
+        tr.appendChild(cell(module.name));
+
+        const stateCell = document.createElement('td');
+        const state = el('span', 'state ' + String(module.state || '').replace(/[^a-z]/g, ''));
+        state.appendChild(el('span', 'dot'));
+        state.appendChild(text(module.state || 'unknown'));
+        stateCell.appendChild(state);
+        tr.appendChild(stateCell);
+
+        tr.appendChild(cell(module.version || '', 'mono'));
+        const tools = (module.tools || []).filter(function (name) { return name.indexOf('__') !== 0; });
+        tr.appendChild(cell(tools.length ? tools.join(', ') : 'none', 'mono wrap'));
+        tr.appendChild(cell(shorten(module.last_error || '', 160), 'wrap'));
+        rows.push(tr);
+      }
+      moduleRows.replaceChildren.apply(moduleRows, rows);
+    }
+
+    let refreshTimer = null;
+    function refreshModulesSoon() {
+      if (refreshTimer !== null) return;
+      refreshTimer = setTimeout(function () {
+        refreshTimer = null;
+        getJSON('/api/modules').then(function (list) {
+          modules.clear();
+          for (const module of list) modules.set(module.name, module);
+          renderModules();
+        }).catch(function () {});
+      }, 300);
+    }
+
+    // ---- log tail --------------------------------------------------------
+    const logEl = document.getElementById('log');
+    const LOG_MAX_LINES = 400;
+
+    function logLine(line) {
+      const atBottom = logEl.scrollHeight - logEl.scrollTop - logEl.clientHeight < 24;
+      logEl.appendChild(el('div', '', line));
+      while (logEl.childElementCount > LOG_MAX_LINES) logEl.removeChild(logEl.firstChild);
+      if (atBottom) logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    // ---- pending confirmations ------------------------------------------
+    const pendingEl = document.getElementById('pending');
+    const pendingItems = new Map();
+
+    function renderPending() {
+      const cards = [];
+      for (const item of pendingItems.values()) {
+        const card = el('div', 'confirm');
+        const txt = el('div', 'txt');
+        txt.appendChild(text('Confirm ' + item.module + '.' + item.tool));
+        if (item.reason) {
+          txt.appendChild(document.createElement('br'));
+          txt.appendChild(el('span', 'why', item.reason));
+        }
+        const actions = el('div', 'row-actions');
+        const yes = el('button', 'action small', 'Confirm');
+        const no = el('button', 'action ghost small', 'Dismiss');
+        yes.addEventListener('click', async function () {
+          yes.disabled = true;
+          no.disabled = true;
+          const result = await postJSON('/api/confirm/' + encodeURIComponent(item.pending_id));
+          logLine('[confirm] ' + item.module + '.' + item.tool + ' -> ' + shorten(result.data, 300));
+          pendingItems.delete(item.pending_id);
+          renderPending();
+        });
+        no.addEventListener('click', function () {
+          pendingItems.delete(item.pending_id);
+          renderPending();
+        });
+        actions.appendChild(yes);
+        actions.appendChild(no);
+        card.appendChild(txt);
+        card.appendChild(actions);
+        cards.push(card);
+      }
+      pendingEl.replaceChildren.apply(pendingEl, cards);
+    }
+
+    async function loadPending() {
+      try {
+        const list = await getJSON('/api/pending');
+        pendingItems.clear();
+        for (const row of list) {
+          pendingItems.set(row.id, { pending_id: row.id, module: row.module, tool: row.tool, reason: '' });
+        }
+        renderPending();
+      } catch (err) { /* the socket will bring new ones anyway */ }
+    }
+
+    // ---- live events -----------------------------------------------------
+    const conn = document.getElementById('conn');
+    const connText = document.getElementById('connText');
+    let backoff = 1000;
+
+    function setConn(className, label) {
+      conn.className = 'conn ' + className;
+      connText.textContent = label;
+    }
+
+    function connect() {
+      const scheme = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      let socket;
+      try {
+        socket = new WebSocket(scheme + '//' + location.host + '/ws/events');
+      } catch (err) {
+        setConn('down', 'offline');
+        setTimeout(connect, backoff);
+        return;
+      }
+      socket.addEventListener('open', function () {
+        backoff = 1000;
+        setConn('live', 'live');
+        loadPending();
+      });
+      socket.addEventListener('close', function () {
+        setConn('down', 'reconnecting');
+        setTimeout(connect, backoff);
+        backoff = Math.min(backoff * 2, 15000);
+      });
+      socket.addEventListener('message', function (event) {
+        let message;
+        try { message = JSON.parse(event.data); } catch (err) { return; }
+        handleEvent(message);
+      });
+    }
+
+    function handleEvent(message) {
+      const data = message.data || {};
+      if (message.type === 'snapshot') {
+        modules.clear();
+        for (const module of message.modules || []) modules.set(module.name, module);
+        renderModules();
+      } else if (message.type === 'state') {
+        const existing = modules.get(data.module);
+        if (existing) {
+          existing.state = data.state;
+          existing.last_error = data.last_error;
+          renderModules();
+        }
+        // The event carries no tool list, so the full view still has to come
+        // from REST. Coalesced, because a restart storm is a burst of events.
+        refreshModulesSoon();
+        logLine('[' + data.module + '] ' + data.previous + ' -> ' + data.state);
+      } else if (message.type === 'log') {
+        logLine('[' + data.module + '] ' + data.line);
+      } else if (message.type === 'confirm') {
+        pendingItems.set(data.pending_id, {
+          pending_id: data.pending_id, module: data.module, tool: data.tool, reason: data.reason || '',
+        });
+        renderPending();
+      } else if (message.type === 'schedule') {
+        logLine('[schedule] ' + data.schedule + (data.ok ? ' ok' : ' failed at step ' + data.failed_step));
+      } else if (message.type === 'budget') {
+        logLine('[budget] daily token budget reached (' + data.tokens + ')');
+      }
+    }
+
+    // ---- chat ------------------------------------------------------------
+    const messagesEl = document.getElementById('messages');
+    const input = document.getElementById('input');
+    const sendBtn = document.getElementById('send');
+    let sessionId = null;
+
+    function bubble(content, kind) {
+      const node = el('div', 'msg ' + kind, content);
+      messagesEl.appendChild(node);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+      return node;
+    }
+    function stepLine(step) {
+      const line = String(step.tool) + ' ' + shorten(step.args, 200) + ' -> ' + shorten(step.result, 300);
+      messagesEl.appendChild(el('div', 'step', line));
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+    function renderTurn(placeholder, data) {
+      sessionId = data.session_id || sessionId;
+      for (const step of data.steps || []) stepLine(step);
+      placeholder.textContent = data.reply || '(no reply)';
+      speak(data.reply || '');
+    }
+
+    async function send(message) {
+      const value = (message === undefined ? input.value : message).trim();
+      if (!value) return;
+      if (message === undefined) input.value = '';
+      sendBtn.disabled = true;
+      bubble(value, 'user');
+      const placeholder = bubble('...', 'assistant');
+      try {
+        const result = await postJSON('/api/chat', { message: value.slice(0, 8000), session_id: sessionId });
+        if (!result.ok) {
+          placeholder.textContent = 'error: ' + shorten(result.data.detail || result.status, 300);
+          return;
+        }
+        renderTurn(placeholder, result.data);
+      } catch (err) {
+        placeholder.textContent = 'network error: ' + err;
+      } finally {
+        sendBtn.disabled = false;
+        input.focus();
+      }
+    }
+
+    sendBtn.addEventListener('click', function () { send(); });
+    input.addEventListener('keydown', function (event) { if (event.key === 'Enter') send(); });
+
+    // ---- voice -----------------------------------------------------------
+    const micBtn = document.getElementById('mic');
+    const speakToggle = document.getElementById('speak');
+    const voiceHint = document.getElementById('voiceHint');
+    let config = { stt_provider: 'browser', tts_provider: 'browser', dev_tools_endpoint: false };
+    let recording = false;
+    let recognizer = null;
+    let recorder = null;
+
+    function setRecording(on) {
+      recording = on;
+      micBtn.classList.toggle('rec', on);
+      micBtn.title = on ? 'Stop' : 'Talk';
+    }
+    function disableMic(reason) {
+      micBtn.disabled = true;
+      micBtn.title = reason;
+      voiceHint.textContent = reason;
+    }
+    function speak(reply) {
+      if (!reply || !speakToggle.checked) return;
+      if (config.tts_provider === 'browser' && 'speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+        window.speechSynthesis.speak(new SpeechSynthesisUtterance(reply));
+      }
+    }
+
+    function setupBrowserVoice() {
+      const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!Recognition) {
+        disableMic('Voice input needs a browser with the Web Speech API. Typing works everywhere.');
+        return;
+      }
+      recognizer = new Recognition();
+      recognizer.lang = navigator.language || 'en-US';
+      recognizer.interimResults = false;
+      recognizer.maxAlternatives = 1;
+      recognizer.addEventListener('result', function (event) {
+        send(event.results[0][0].transcript);
+      });
+      recognizer.addEventListener('end', function () { setRecording(false); });
+      recognizer.addEventListener('error', function (event) {
+        setRecording(false);
+        voiceHint.textContent = 'microphone error: ' + event.error;
+      });
+      micBtn.addEventListener('click', function () {
+        if (recording) { recognizer.stop(); return; }
+        setRecording(true);
+        try { recognizer.start(); } catch (err) { setRecording(false); }
+      });
+    }
+
+    function setupServerVoice() {
+      micBtn.addEventListener('click', async function () {
+        if (recording) { if (recorder) recorder.stop(); return; }
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          const chunks = [];
+          recorder = new MediaRecorder(stream);
+          recorder.addEventListener('dataavailable', function (event) { chunks.push(event.data); });
+          recorder.addEventListener('stop', async function () {
+            stream.getTracks().forEach(function (track) { track.stop(); });
+            setRecording(false);
+            const blob = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' });
+            const form = new FormData();
+            form.append('audio', blob, 'audio.webm');
+            if (sessionId) form.append('session_id', sessionId);
+            const placeholder = bubble('...', 'assistant');
+            try {
+              const response = await fetch('/api/voice', { method: 'POST', body: form });
+              const data = await response.json();
+              if (data.ok === false) {
+                placeholder.textContent = 'voice: ' + (data.detail || data.error);
+                return;
+              }
+              if (data.transcript) bubble(data.transcript, 'user');
+              renderTurn(placeholder, data);
+              if (data.audio) {
+                const audio = new Audio('data:' + (data.audio_mime || 'audio/mpeg') + ';base64,' + data.audio);
+                audio.play().catch(function () {});
+              }
+            } catch (err) {
+              placeholder.textContent = 'voice failed: ' + err;
+            }
+          });
+          recorder.start();
+          setRecording(true);
+        } catch (err) {
+          voiceHint.textContent = 'microphone unavailable: ' + err;
+        }
+      });
+    }
+
+    async function setupVoice() {
+      try { config = await getJSON('/api/client-config'); } catch (err) { /* defaults are fine */ }
+      if (config.stt_provider === 'none') {
+        disableMic('Speech to text is switched off in the configuration.');
+        return;
+      }
+      if (!window.isSecureContext) {
+        // getUserMedia and the Web Speech API are both refused outside a secure
+        // context, which on a LAN address means anything but https.
+        disableMic('Voice needs https (or localhost). Typing works over plain http.');
+        return;
+      }
+      if (config.stt_provider === 'openai_compat') setupServerVoice();
+      else setupBrowserVoice();
+    }
+
+    // ---- tabs ------------------------------------------------------------
+    const auditRows = document.getElementById('auditRows');
+    const scheduleRows = document.getElementById('scheduleRows');
+    const toolRows = document.getElementById('toolRows');
+
+    async function loadAudit() {
+      try {
+        const rows = await getJSON('/api/audit?limit=100');
+        if (!rows.length) { emptyRow(auditRows, 6, 'No tool calls recorded yet.'); return; }
+        const out = rows.map(function (row) {
+          const tr = document.createElement('tr');
+          tr.appendChild(cell(stamp(row.ts), 'mono'));
+          tr.appendChild(cell(row.principal));
+          tr.appendChild(cell(row.module + '.' + row.tool, 'mono wrap'));
+          tr.appendChild(cell(row.decision));
+          tr.appendChild(cell(row.result));
+          tr.appendChild(cell(row.duration_ms === null ? '' : row.duration_ms, 'mono'));
+          return tr;
+        });
+        auditRows.replaceChildren.apply(auditRows, out);
+      } catch (err) { emptyRow(auditRows, 6, 'Could not load the audit log.'); }
+    }
+
+    async function loadSchedules() {
+      try {
+        const rows = await getJSON('/api/schedules');
+        if (!rows.length) { emptyRow(scheduleRows, 5, 'No routines configured.'); return; }
+        const out = rows.map(function (row) {
+          const tr = document.createElement('tr');
+          tr.appendChild(cell(row.id));
+          tr.appendChild(cell(row.cron, 'mono'));
+          tr.appendChild(cell(row.steps, 'mono'));
+          tr.appendChild(cell(row.next_run ? new Date(row.next_run).toLocaleString() : '', 'mono wrap'));
+          const actions = document.createElement('td');
+          if (config.dev_tools_endpoint) {
+            const run = el('button', 'action ghost small', 'Run');
+            run.addEventListener('click', async function () {
+              run.disabled = true;
+              const result = await postJSON('/api/schedules/' + encodeURIComponent(row.id) + '/run');
+              logLine('[schedule] ' + row.id + ' -> ' + shorten(result.data, 300));
+              run.disabled = false;
+            });
+            actions.appendChild(run);
+          }
+          tr.appendChild(actions);
+          return tr;
+        });
+        scheduleRows.replaceChildren.apply(scheduleRows, out);
+      } catch (err) { emptyRow(scheduleRows, 5, 'Could not load the routines.'); }
+    }
+
+    async function loadTools() {
+      try {
+        const rows = await getJSON('/api/tools');
+        if (!rows.length) { emptyRow(toolRows, 2, 'No tools available: no module is ready.'); return; }
+        const out = rows.map(function (row) {
+          const tr = document.createElement('tr');
+          tr.appendChild(cell(row.name, 'mono'));
+          tr.appendChild(cell(shorten(row.description || '', 200), 'wrap'));
+          return tr;
+        });
+        toolRows.replaceChildren.apply(toolRows, out);
+      } catch (err) { emptyRow(toolRows, 2, 'Could not load the tool catalog.'); }
+    }
+
+    const loaders = { audit: loadAudit, schedules: loadSchedules, tools: loadTools };
+    const tabs = document.getElementById('tabs');
+    tabs.addEventListener('click', function (event) {
+      const button = event.target.closest('button[data-tab]');
+      if (!button) return;
+      const name = button.dataset.tab;
+      for (const other of tabs.querySelectorAll('button')) other.classList.toggle('on', other === button);
+      for (const panel of document.querySelectorAll('.panel')) {
+        panel.classList.toggle('on', panel.dataset.panel === name);
+      }
+      if (loaders[name]) loaders[name]();
+    });
+
+    // ---- start -----------------------------------------------------------
+    emptyRow(moduleRows, 5, 'Loading...');
+    setupVoice();
+    connect();
+    getJSON('/api/modules').then(function (list) {
+      for (const module of list) modules.set(module.name, module);
+      renderModules();
+    }).catch(function () { emptyRow(moduleRows, 5, 'Could not reach the hub.'); });
+  })();
+  </script>
+</body>
+</html>

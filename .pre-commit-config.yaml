@@ -1,0 +1,59 @@
+# Run `pre-commit install` once after cloning. Keep the revisions current with
+# `pre-commit autoupdate`; they are pinned so that two developers formatting the
+# same file do not disagree about the result.
+default_language_version:
+  python: python3.12
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+        args: [--markdown-linebreak-ext=md]
+      - id: mixed-line-ending
+        args: [--fix=lf]
+      - id: check-yaml
+      - id: check-toml
+      - id: check-json
+      - id: check-merge-conflict
+      - id: check-case-conflict
+      - id: check-added-large-files
+        args: [--maxkb=512]
+      - id: detect-private-key
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.13.0
+    hooks:
+      - id: ruff-check
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: local
+    hooks:
+      # The hub reads real credentials from the environment or from a file, and
+      # never from a file that belongs in the repository. Anything here that
+      # looks like a live key is either a mistake or an example that will be
+      # copied by someone who does not know it is fake.
+      - id: no-secret-literals
+        name: no secret-looking literals
+        language: pygrep
+        types: [text]
+        entry: |-
+          (?i)(sk-[A-Za-z0-9_-]{24,}|ghp_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{40,}|xox[abprs]-[A-Za-z0-9-]{20,}|AKIA[0-9A-Z]{16}|eyJ[A-Za-z0-9_=-]{8,}\.eyJ[A-Za-z0-9_=-]{8,}\.[A-Za-z0-9_+/=.-]{8,}|(?:api[_-]?key|access[_-]?token|auth[_-]?token|secret|password|passwd)["']?\s*[:=]\s*["'](?!(?:changeme|placeholder|example|redacted|dummy|fake|test|your|xxx|\.\.\.))[^"'\s${}]{20,}["'])
+
+      # A module is spawned from an argv list. A shell in that path would give
+      # a crafted manifest value somewhere to escape into.
+      - id: no-shell-true
+        name: no shell=True
+        language: pygrep
+        types: [python]
+        entry: 'shell\s*=\s*True'
+
+      # Module output is untrusted text. Interpolating it into HTML is how a
+      # module that the operator merely installed ends up scripting the console.
+      - id: no-html-interpolation
+        name: no HTML interpolation in the console
+        language: pygrep
+        files: ^src/vahub/web/.*\.(js|html)$
+        entry: '(\.innerHTML\s*=.*(\$\{|\+)|insertAdjacentHTML)'

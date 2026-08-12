@@ -1,0 +1,140 @@
+# Production stack: the hub, and a Caddy reverse proxy that terminates TLS and
+# demands a client certificate.
+#
+# The hub has no authentication of its own. That is a deliberate design choice,
+# not an omission: authentication belongs to the proxy, which already has to
+# exist for TLS. The consequence is that the hub must never be reachable
+# directly, so it publishes no port at all here and is reachable only over the
+# internal compose network. The proxy binds to loopback by default; set
+# VAHUB_BIND to expose it on a LAN address once you have issued client
+# certificates to the devices that need one.
+#
+#   cp ../../examples/vahub.yaml ./vahub.yaml   # then edit it
+#   ./gen-certs.sh                              # dev certificates, see the script
+#   mkdir -p secrets && install -m 0600 /dev/null secrets/llm_api_key
+#   docker compose up -d
+#   docker compose exec vahub vahub module add time
+#
+# VAHUB_DOMAIN, VAHUB_BIND, VAHUB_PORT, VAHUB_VERSION and TZ are read from a
+# .env file next to this one, or from your shell.
+#
+# Requires Docker Compose 2.24 or newer (the `env_file` long syntax below).
+name: vahub
+
+services:
+  vahub:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+      args:
+        VERSION: ${VAHUB_VERSION:-0.0.0}
+        REVISION: ${VAHUB_REVISION:-unknown}
+    image: vahub:${VAHUB_VERSION:-latest}
+    # No `ports:`. See the note at the top of this file.
+    expose:
+      - "8080"
+    environment:
+      VAHUB_CONFIG: /etc/vahub/vahub.yaml
+      # Inside a container, loopback means "unreachable by the proxy". The
+      # container network namespace is the boundary here, and nothing publishes
+      # this port to the host.
+      VAHUB_WEB__HOST: 0.0.0.0
+      # The browser talks to the proxy, so the origin the hub must accept is the
+      # proxy's, not its own: scheme, host and the port it is published on.
+      VAHUB_WEB__ORIGIN_ALLOWLIST: '["https://${VAHUB_DOMAIN:-localhost}:${VAHUB_PORT:-8443}"]'
+      TZ: ${TZ:-UTC}
+    env_file:
+      # Module credentials (HA_TOKEN, NTFY_URL, ...) reach a module through the
+      # hub's environment: the supervisor passes only the keys that module's
+      # manifest declares, and nothing else. There is no per-variable file
+      # indirection for those, so they live in one file with restrictive
+      # permissions rather than in this compose file. Optional: a hub with only
+      # credential-free modules needs no such file.
+      - path: ./module.env
+        required: false
+    secrets:
+      # Mounted at /run/secrets/llm_api_key. The config references it as
+      # ${file:/run/secrets/llm_api_key}, so the key is never in the YAML, never
+      # in this file, and never in `docker inspect` output.
+      - llm_api_key
+    volumes:
+      - ./vahub.yaml:/etc/vahub/vahub.yaml:ro
+      # Written by `vahub module add`, so it cannot be a read-only bind mount.
+      - vahub-modules:/etc/vahub/modules.d
+      # Database, audit log, per-module virtual environments.
+      - vahub-state:/var/lib/vahub
+    restart: unless-stopped
+    # PID 1 must reap orphaned grandchildren. The hub reaps the module processes
+    # it spawned itself, but a module that forks and dies leaves its children to
+    # PID 1, and CPython does not reap strangers.
+    init: true
+    # Modules are asked to shut down before they are killed; give them room.
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    # Everything the hub writes lives on the state volume (HOME, caches and the
+    # database all point there in the image), so the root filesystem can stay
+    # read-only.
+    read_only: true
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,size=64m
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 1g
+          # A module stuck in a fork loop must not take the host with it. Raise
+          # this if you run many modules.
+          pids: 512
+        reservations:
+          memory: 256m
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  proxy:
+    # Pin a digest for a real deployment; a tag is a moving target.
+    image: caddy:2-alpine
+    depends_on:
+      vahub:
+        condition: service_healthy
+    ports:
+      # Loopback by default. Anyone who can reach this port still needs a client
+      # certificate, but there is no reason to offer it more widely than needed.
+      - "${VAHUB_BIND:-127.0.0.1}:${VAHUB_PORT:-8443}:8443"
+    environment:
+      VAHUB_DOMAIN: ${VAHUB_DOMAIN:-localhost}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./certs:/certs:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 256m
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+secrets:
+  llm_api_key:
+    file: ./secrets/llm_api_key
+
+volumes:
+  vahub-state:
+  vahub-modules:
+  caddy-data:
+  caddy-config:

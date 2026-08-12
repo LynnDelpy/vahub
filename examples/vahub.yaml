@@ -1,0 +1,302 @@
+# vahub configuration, annotated.
+#
+# One file configures the whole hub. Copy it to /etc/vahub/vahub.yaml (or point
+# VAHUB_CONFIG at it), delete what you do not need, and read the policy section
+# twice: it is the only thing deciding what the model is allowed to do.
+#
+# Three things worth knowing before you edit:
+#
+#   * Loading is strict. An unknown key aborts startup. A misspelled
+#     `origin_allowlist` should fail loudly, not ship an empty, fail open list.
+#   * Secrets are never written here. Use ${VAR} for an environment variable or
+#     ${file:/path} for a file (a Docker secret, a systemd credential, a
+#     Kubernetes secret). ${VAR:-default} works too.
+#   * Every scalar can be overridden by an environment variable with the VAHUB_
+#     prefix and __ between levels: VAHUB_WEB__PORT=9000 sets web.port. That is
+#     for container deployments. Policy rules are deliberately not expressible
+#     that way.
+
+# --------------------------------------------------------------------------
+# hub: process wide runtime settings
+# --------------------------------------------------------------------------
+hub:
+  log_level: INFO            # DEBUG, INFO, WARNING, ERROR
+  # json for a log aggregator, console when you are reading it yourself.
+  log_format: json
+  # Used by the scheduler when it interprets a cron expression, and by anything
+  # that shows a time to a person. Any zoneinfo name.
+  timezone: Europe/Zurich
+  # Database, audit log, and one virtual environment per installed module.
+  state_dir: /var/lib/vahub
+  # Where `vahub module add` writes manifests. Everything here is started.
+  modules_dir: /etc/vahub/modules.d
+
+# --------------------------------------------------------------------------
+# web: the HTTP API and the status page
+# --------------------------------------------------------------------------
+web:
+  # Loopback. The hub has no authentication of its own, so exposing it further
+  # has to be a decision somebody made on purpose. Put a reverse proxy with TLS
+  # and client certificates in front of it instead (see deploy/docker).
+  host: 127.0.0.1
+  port: 8080
+
+  # Browser origins allowed to call the API. Same origin policy does not stop a
+  # cross origin POST and does not apply to WebSockets at all, so this list is
+  # checked explicitly on both. Set it to the address you actually open in a
+  # browser, which behind a proxy is the proxy's. "*" turns the check off.
+  origin_allowlist:
+    - https://hub.example.lan:8443
+
+  # POST /api/dev/call runs a tool directly, without the agent. Still policy
+  # gated, but unauthenticated. Useful while writing a module, off otherwise.
+  dev_tools_endpoint: false
+
+  # The header your authenticating proxy sets, recorded in the audit log as the
+  # acting principal. It is information, never an authorization input, and the
+  # proxy must replace it rather than forward what the client sent.
+  auth_subject_header: X-Auth-Subject
+
+# --------------------------------------------------------------------------
+# llm: which model decides what to call
+# --------------------------------------------------------------------------
+llm:
+  # openai_compat covers OpenAI, OpenRouter, Groq, Ollama, llama.cpp and
+  # anything else speaking that API. "mock" is a keyword stub that needs no
+  # credentials and still exercises the whole agent loop.
+  provider: openai_compat
+  base_url: https://openrouter.ai/api/v1
+  model: anthropic/claude-3.5-sonnet
+
+  # Never an inline key. This path is where Docker mounts a secret; under
+  # systemd it is /run/credentials/vahub.service/llm_api_key, and with
+  # ${VAHUB_LLM_API_KEY} it comes from the environment. Missing means startup
+  # fails with a readable error, which is the correct outcome.
+  api_key: "${file:/run/secrets/llm_api_key}"
+
+  # Low, because this model is choosing tool calls rather than writing prose.
+  temperature: 0.2
+  max_tokens: 1024
+  request_timeout_s: 60.0
+
+  # Optional. Replaces the built in system prompt entirely, so if you set it,
+  # say what the assistant is and how it should behave when a call is refused.
+  system_prompt: |
+    You are a home assistant. Answer briefly, in the user's language.
+    When a tool call is refused by policy, say so plainly and stop; do not
+    look for another route to the same effect.
+
+# --------------------------------------------------------------------------
+# budgets: what one conversation turn may cost
+# --------------------------------------------------------------------------
+budgets:
+  # How many times the model may call a tool and look at the result before the
+  # turn ends. Stops a loop that keeps retrying the same failing call.
+  iterations_per_turn: 8
+
+  # A tool result larger than this is truncated before the model sees it. An
+  # iteration cap alone does not bound cost: one unfiltered list of every entity
+  # in a house can dwarf an entire conversation.
+  tool_result_bytes: 16384
+
+  tokens_per_turn: 20000
+  # Null means no daily ceiling. A number here is the difference between a bug
+  # costing a franc and costing a rent payment.
+  tokens_per_day: 200000
+
+  # Wall clock per turn. Voice is much tighter than text because a person
+  # waiting for a spoken answer gives up long before a timeout would fire.
+  wall_clock_text_s: 30.0
+  wall_clock_voice_s: 8.0
+
+# --------------------------------------------------------------------------
+# speech
+# --------------------------------------------------------------------------
+speech:
+  stt:
+    # "browser" transcribes in the client: no credentials, no audio leaves the
+    # machine. "openai_compat" posts the audio to a Whisper style endpoint.
+    # "none" disables voice input.
+    provider: browser
+    base_url: https://api.openai.com/v1
+    model: whisper-1
+    # Only read when provider is openai_compat.
+    api_key: "${VAHUB_STT_API_KEY:-}"
+    request_timeout_s: 60.0
+  tts:
+    provider: browser
+    base_url: https://api.openai.com/v1
+    model: tts-1
+    voice: alloy
+    api_key: "${VAHUB_TTS_API_KEY:-}"
+    request_timeout_s: 60.0
+
+# --------------------------------------------------------------------------
+# policy: the gate
+# --------------------------------------------------------------------------
+# Checked in code before every tool call, on the arguments as well as the tool
+# name. The model does not participate in this decision and cannot talk its way
+# past it. A module's manifest describes what it offers; this section decides
+# what may actually run.
+policy:
+  # Deny unless a rule below says otherwise. The alternative is a model with
+  # unrestricted control of your house.
+  default: deny
+
+  # How long a destructive call stays pending while it waits for a human to
+  # confirm it out of band.
+  confirm_ttl_s: 60.0
+
+  # Who is acting. These are not interchangeable.
+  principals:
+    # The model, driven by whoever is talking to it.
+    agent:
+      confirm: [destructive]     # propose it, a human presses the button
+      deny: []
+    # Routines run unattended, so nothing may wait for a confirmation, and
+    # therefore nothing dangerous may be reachable at all. Deny is by glob over
+    # "module.tool".
+    scheduler:
+      confirm: []
+      deny: ["*.lock_*", "*.unlock_*", "*.delete_*"]
+    # A person acting directly through the API, already authenticated by the
+    # proxy and holding a client certificate.
+    user:
+      confirm: []
+      deny: []
+    # The unauthenticated dev endpoint. Keep it narrow even in development.
+    dev:
+      confirm: []
+      deny: ["*.unlock_*"]
+
+  # Rules are keyed "module.tool".
+  #
+  # class decides how the call is treated, not how dangerous it sounds:
+  #   read         no side effect
+  #   write        a side effect you would undo without much thought
+  #   destructive  needs a human, per the principal's confirm list
+  #
+  # constraints bound each argument. An argument with no entry here is
+  # rejected: the gate never waves through something it was not told about. So
+  # every argument a tool accepts must be listed, read tools included.
+  rules:
+    # ---- time ----
+    time.get_current_time:
+      class: read
+      constraints:
+        tz: { max_len: 64 }
+    time.speak_current_time:
+      class: read
+      constraints:
+        tz: { max_len: 64 }
+
+    # ---- public transport (read only, free API) ----
+    transit.find_connections:
+      class: read
+      constraints:
+        origin: { max_len: 120 }
+        destination: { max_len: 120 }
+        depart_at: { matches: "^[0-2]?[0-9]:[0-5][0-9]$" }
+        arrive_by: { matches: "^[0-2]?[0-9]:[0-5][0-9]$" }
+        date: { matches: "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" }
+        limit: { range: [1, 6] }
+    transit.next_departures:
+      class: read
+      constraints:
+        station: { max_len: 120 }
+        limit: { range: [1, 12] }
+
+    # ---- home automation ----
+    # A Home Assistant token is admin or nothing. Whatever passes this gate has
+    # full control of the house, which is why the rules below are written in
+    # terms of specific entities rather than "anything the model asks for".
+    homeassistant.list_entities:
+      class: read
+      constraints:
+        # A real house has hundreds of entities and the unfiltered list is
+        # truncated before the model sees it, so it needs to narrow the query.
+        domain: { matches: "^[a-z_]{1,32}$" }
+    homeassistant.get_state:
+      class: read
+      constraints:
+        entity_id: { matches: "^(light|sensor|switch|climate|lock)\\.", max_len: 64 }
+
+    homeassistant.light_turn_on:
+      class: write
+      constraints:
+        # Any light. To allow only some, name them:
+        #   matches: "^light\\.(living_room|kitchen)$"
+        entity_id: { matches: "^light\\.", max_len: 64 }
+        brightness_pct: { range: [1, 100] }
+    homeassistant.light_turn_off:
+      class: write
+      constraints:
+        entity_id: { matches: "^light\\.", max_len: 64 }
+
+    homeassistant.set_thermostat:
+      class: write
+      constraints:
+        entity_id: { matches: "^climate\\.", max_len: 64 }
+        # A range on a number is not bureaucracy. It is what stops "set it to
+        # 35" from being answered literally at four in the morning.
+        temperature: { range: [15, 24] }
+
+    # Locking is a write: the failure mode is an inconvenience.
+    homeassistant.lock_lock:
+      class: write
+      constraints:
+        entity_id: { in: ["lock.front_door", "lock.garage"] }
+    # Unlocking is destructive: the failure mode is a stranger in the hallway.
+    # The agent may propose it; a human confirms it out of band, never by
+    # saying yes to the same voice channel that asked.
+    homeassistant.lock_unlock:
+      class: destructive
+      constraints:
+        entity_id: { in: ["lock.front_door", "lock.garage"] }
+
+    # ---- notifications ----
+    notify.send_push:
+      class: write
+      constraints:
+        title: { max_len: 120 }
+        # Long enough to be useful, short enough that a confused model cannot
+        # push a novel to your lock screen.
+        message: { max_len: 1000 }
+        priority: { in: ["min", "low", "default", "high", "urgent"] }
+        tags: { max_len: 120 }
+
+# --------------------------------------------------------------------------
+# schedules: deterministic routines
+# --------------------------------------------------------------------------
+# Fixed steps, no model involved. They run as principal "scheduler", through the
+# same gate as everything else, so a routine cannot do what that principal is
+# denied. Cron fields are interpreted in hub.timezone.
+schedules:
+  - id: weekday_morning
+    cron: "30 6 * * 1-5"
+    enabled: true
+    steps:
+      - module: homeassistant
+        tool: light_turn_on
+        args: { entity_id: light.bedroom, brightness_pct: 40 }
+        timeout_s: 10.0
+      - module: time
+        tool: speak_current_time
+        args: {}
+        timeout_s: 10.0
+
+  - id: evening_transit_check
+    cron: "0 17 * * 1-5"
+    enabled: false          # switch on once you have set the stations
+    steps:
+      - module: transit
+        tool: next_departures
+        args: { station: Zurich HB, limit: 3 }
+        timeout_s: 15.0
+      - module: notify
+        tool: send_push
+        args:
+          title: Evening departures
+          message: Checked at 17:00
+          priority: low
+        timeout_s: 10.0

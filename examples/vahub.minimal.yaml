@@ -1,0 +1,26 @@
+# The smallest configuration that runs.
+#
+#   VAHUB_CONFIG=examples/vahub.minimal.yaml vahub run
+#
+# Everything not named here keeps its default; examples/vahub.yaml documents the
+# rest. The mock model needs no credentials and still goes through the whole
+# agent loop, so this is enough to see the hub work end to end.
+hub:
+  state_dir: ./state
+  modules_dir: ./modules.d
+
+llm:
+  provider: mock
+  model: mock
+
+policy:
+  # Nothing is callable until a rule says so, and each argument needs a bound.
+  default: deny
+  principals:
+    agent:
+      confirm: [destructive]
+  rules:
+    time.get_current_time:
+      class: read
+      constraints:
+        tz: { max_len: 64 }

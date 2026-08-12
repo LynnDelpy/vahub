@@ -1,0 +1,175 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# Read-only by default. Jobs that need more ask for it explicitly.
+permissions:
+  contents: read
+
+# A new push to the same branch makes the previous run pointless.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Bytecode compilation costs a second at install time and saves it back on
+  # every interpreter start in the test job.
+  UV_COMPILE_BYTECODE: "1"
+  FORCE_COLOR: "1"
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: pyproject.toml
+
+      - name: Install
+        run: uv sync --extra dev --python 3.12
+
+      - name: ruff check
+        run: uv run ruff check --output-format=github .
+
+      - name: ruff format
+        run: uv run ruff format --check --diff .
+
+  types:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: pyproject.toml
+
+      - name: Install
+        run: uv sync --extra dev --python 3.12
+
+      - name: mypy
+        run: uv run mypy
+
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: pyproject.toml
+
+      - name: Install
+        run: uv sync --extra dev --python ${{ matrix.python-version }}
+
+      # --strict-markers and --strict-config turn a typo in a marker or in the
+      # pytest config into a failure instead of a silently skipped selection.
+      # error::RuntimeWarning is what catches a coroutine that was created and
+      # never awaited, which in an async codebase is a real bug and not noise.
+      - name: pytest
+        run: >
+          uv run pytest
+          --strict-markers
+          --strict-config
+          -W error::RuntimeWarning
+          --cov=vahub
+          --cov-report=term-missing:skip-covered
+          --cov-report=xml
+
+      - name: Upload coverage
+        if: matrix.python-version == '3.12'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-xml
+          path: coverage.xml
+          if-no-files-found: error
+
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: pyproject.toml
+
+      - name: Build sdist and wheel
+        run: uv build
+
+      - name: Check metadata
+        run: uvx twine check --strict dist/*
+
+      # Installing the built wheel into an empty environment is the only way to
+      # catch a packaging mistake that an editable install hides: a missing
+      # subpackage, a data file left out of the wheel, a broken entry point.
+      - name: Smoke test the wheel
+        run: |
+          uv venv --python 3.12 /tmp/smoke
+          VIRTUAL_ENV=/tmp/smoke uv pip install dist/*.whl
+          /tmp/smoke/bin/vahub --version
+          /tmp/smoke/bin/vahub --help
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+
+  image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      # Single architecture here. The multi-arch build is expensive and only
+      # runs on release, where the extra ten minutes do not block a review.
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/docker/Dockerfile
+          push: false
+          load: true
+          tags: vahub:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # The image has ENTRYPOINT ["vahub"], so the argument is the subcommand.
+      - name: Smoke test the image
+        run: |
+          docker run --rm vahub:ci --version
+          docker run --rm vahub:ci --help
+
+  # One check to require in branch protection. Without it, every entry in the
+  # test matrix has to be listed there by name and a new Python version
+  # silently becomes optional.
+  ci-ok:
+    if: always()
+    needs: [lint, types, test, build, image]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check that every job succeeded
+        run: |
+          if [ "${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}" = "true" ]; then
+            echo "at least one job did not succeed" >&2
+            exit 1
+          fi

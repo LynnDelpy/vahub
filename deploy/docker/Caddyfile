@@ -1,0 +1,69 @@
+# TLS termination and client-certificate authentication in front of the hub.
+#
+# The hub authenticates nobody. This file is the only thing standing between the
+# network and a process that can unlock your front door, so read it before you
+# change it.
+#
+# What it guarantees:
+#   * a request without a certificate signed by our CA never reaches the hub
+#   * the hub is told who the caller is, and that value comes from the verified
+#     certificate rather than from anything the caller typed
+{
+	# No administration API. It is unauthenticated on localhost by default and
+	# nothing here needs it.
+	admin off
+	# Certificates are supplied below, so nothing should be requested from an
+	# ACME CA. Remove this (and the cert file arguments) if you are serving a
+	# real domain and want Caddy to obtain a publicly trusted certificate; client
+	# authentication works the same either way.
+	auto_https off
+}
+
+# Only requests whose Host matches this address are served, and with client
+# authentication configured Caddy additionally requires the SNI name and the
+# Host header to agree. Set VAHUB_DOMAIN in the environment (docker-compose.yml
+# passes it through) to the name in the server certificate and reach the hub
+# under that name.
+https://{$VAHUB_DOMAIN:localhost}:8443 {
+	tls /certs/server.crt /certs/server.key {
+		client_auth {
+			# require_and_verify, not request: an unverified client is rejected
+			# during the handshake and never reaches a handler.
+			mode require_and_verify
+			# Caddy 2.8 and newer. On older versions this is
+			# `trusted_ca_cert_file /certs/ca.crt`.
+			trust_pool file /certs/ca.crt
+		}
+	}
+
+	log {
+		output stderr
+		format json
+	}
+
+	# /api/dev/call runs a tool without the agent and without authentication of
+	# its own. It has no business being reachable from outside; developers reach
+	# it on loopback through the dev compose overlay instead.
+	handle /api/dev/* {
+		respond 404
+	}
+
+	# WebSocket upgrades (/ws/events) need no extra configuration in Caddy 2 and
+	# are proxied as they are.
+	handle {
+		reverse_proxy vahub:8080 {
+			# `header_up <field> <value>` REPLACES any value the client sent, so
+			# a caller cannot claim to be someone else by setting the header
+			# itself. The hub records this as the acting principal; it is audit
+			# information, never an authorization input.
+			header_up X-Auth-Subject {http.request.tls.client.subject}
+		}
+	}
+
+	header {
+		-Server
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+	}
+}

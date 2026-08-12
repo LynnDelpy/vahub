@@ -1,0 +1,66 @@
+name: Feature request
+description: Propose a change to the hub itself
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A new capability (lights, calendars, transit, notifications) usually
+        belongs in a module rather than in the hub. Use the module request
+        template for those. This template is for the hub: the agent loop, the
+        policy gate, the supervisor, the scheduler, the web console, the CLI.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: >
+        What you were trying to do and where the current design got in the way.
+        Describe the situation, not the solution you already have in mind.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you propose
+      description: The change itself, and roughly how it would look in vahub.yaml.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What you tried instead
+      description: >
+        Existing configuration, a wrapper script, a module. Knowing what is
+        already possible keeps the hub small.
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - agent loop or prompting
+        - policy gate and confirmations
+        - module supervisor and MCP transport
+        - scheduler
+        - web console and API
+        - CLI
+        - speech (STT or TTS)
+        - packaging and deployment
+        - documentation
+        - other
+    validations:
+      required: true
+
+  - type: textarea
+    id: security
+    attributes:
+      label: Effect on the security boundary
+      description: >
+        Does this widen what a module, a prompt or an unauthenticated caller
+        can reach? A change that lets the model decide something the gate used
+        to decide needs a good reason. Write "none" if it does not apply.
+    validations:
+      required: true

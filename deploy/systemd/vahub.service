@@ -1,0 +1,114 @@
+[Unit]
+Description=vahub, a self-hosted voice assistant hub
+Documentation=https://github.com/LynnDelpy/vahub
+# The hub talks to a language model and to whatever a module talks to, so it
+# wants routable addresses, not just an up interface.
+Wants=network-online.target
+After=network-online.target
+# If it cannot stay up for five attempts in a minute, restarting again will not
+# help; leave it failed so the state is visible.
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=exec
+User=vahub
+Group=vahub
+
+SyslogIdentifier=vahub
+
+# A dedicated user rather than DynamicUser=yes: the state directory outlives any
+# single start and needs an owner that does not change, and a module that names
+# a runtime.user in its manifest needs a uid that is the same on every boot.
+# See README.md for the sysusers snippet that creates the account.
+
+Environment=VAHUB_CONFIG=/etc/vahub/vahub.yaml
+Environment=PYTHONUNBUFFERED=1
+# Module credentials (HA_TOKEN, NTFY_URL, ...) are read from the hub's
+# environment; the supervisor passes each module only the keys its manifest
+# declares. Optional, and 0600 root:root if present.
+EnvironmentFile=-/etc/vahub/module.env
+
+# The language model key is a systemd credential, not an environment variable:
+# it is readable only by this unit, it does not appear in /proc/PID/environ, and
+# it can be stored encrypted with systemd-creds (in which case this becomes
+# LoadCredentialEncrypted=, same path on both sides). The config refers to it as
+#   api_key: ${file:/run/credentials/vahub.service/llm_api_key}
+LoadCredential=llm_api_key:/etc/vahub/credentials/llm_api_key
+
+ExecStart=/opt/vahub/venv/bin/vahub run
+
+# Modules are asked to stop before they are killed, and a shutdown that hangs
+# should not block the machine forever.
+KillMode=mixed
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+Restart=on-failure
+RestartSec=5
+
+# /var/lib/vahub, created 0700 and owned by the service user. Implies
+# ReadWritePaths for it, which is the only writable location this unit gets.
+StateDirectory=vahub
+StateDirectoryMode=0700
+# /etc/vahub stays read-only: the config and the module manifests are installed,
+# not written at runtime, except by `vahub module add` which you run by hand.
+
+# --- sandbox --------------------------------------------------------------
+# Everything below is deny by default. If a module needs something these rules
+# forbid, widen it here deliberately, with a comment, rather than removing the
+# section.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectProc=invisible
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+RemoveIPC=yes
+UMask=0077
+
+# AF_NETLINK is not optional: glibc uses it to enumerate interfaces during name
+# resolution, so an httpx call to the model provider fails without it.
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+
+SystemCallArchitectures=native
+# @system-service includes @setuid, which the supervisor needs to drop privileges
+# for a module that declares runtime.user.
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+
+# CPython needs neither a JIT nor writable-executable memory. A module that uses
+# one (a libffi closure, a JIT compiler) will fail to start with this set; drop
+# the line if that is the module you want, and know what you gave up.
+MemoryDenyWriteExecute=yes
+
+# No capabilities at all. If a module declares runtime.user and you want the
+# supervisor to actually drop to it, replace both lines with:
+#   CapabilityBoundingSet=CAP_SETUID CAP_SETGID
+#   AmbientCapabilities=CAP_SETUID CAP_SETGID
+# and remember that this lets the hub become those users, and only those.
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+# --- resource bounds ------------------------------------------------------
+# A module that leaks must degrade the assistant, not the machine. These bound
+# the hub and every module it spawns together, so raise them if you run a module
+# that is genuinely hungry (a local speech model, for instance).
+MemoryMax=1G
+TasksMax=512
+# The kernel killing one module process is not a reason to stop the hub; the
+# supervisor restarts modules on its own.
+OOMPolicy=continue
+
+[Install]
+WantedBy=multi-user.target

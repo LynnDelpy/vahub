@@ -16,7 +16,7 @@
 # --------------------------------------------------------------------------
 # build
 # --------------------------------------------------------------------------
-FROM python:3.12-slim AS build
+FROM python:3.14-slim AS build
 
 # uv is pinned: an installer that changes under you defeats the point of
 # building an image in the first place.
@@ -39,7 +39,7 @@ RUN uv venv /opt/vahub/venv --python /usr/local/bin/python3.12 \
 # --------------------------------------------------------------------------
 # runtime
 # --------------------------------------------------------------------------
-FROM python:3.12-slim AS runtime
+FROM python:3.14-slim AS runtime
 
 ARG VERSION=0.0.0
 ARG REVISION=unknown

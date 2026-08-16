@@ -71,11 +71,16 @@ def manifests(config: Config) -> dict[str, Manifest]:
 
 
 def installer_for(
-    config: Config, *, offline: bool = False, allow_root: bool = False, quiet: bool = False
+    config: Config,
+    *,
+    offline: bool = False,
+    allow_root: bool = False,
+    quiet: bool = False,
+    registry_url: str | None = None,
 ) -> Installer:
     return Installer(
         config,
-        registry=registry_for(config),
+        registry=registry_for(config, registry_url),
         store=store_for(config),
         offline=offline,
         allow_root=allow_root,
@@ -284,20 +289,81 @@ def add(
         help="Install from here instead of the registry: git+https://host/repo@tag, pypi:pkg==1.0, ./path",
     ),
     version: str = typer.Option(None, "--version", help="Registry version to install."),
+    all_modules: bool = typer.Option(False, "--all", help="Install every module in the registry."),
+    registry_url: str = typer.Option(None, "--registry", help="Registry index URL or file."),
     force: bool = typer.Option(False, "--force", help="Reinstall even if nothing would change."),
     offline: bool = typer.Option(False, "--offline", help="Use the cached index only."),
     allow_root: bool = typer.Option(False, "--allow-root", help="Permit installing as root."),
 ) -> None:
-    """Install a module."""
+    """Install a module, or every module in the registry with --all."""
     cli = state(ctx)
     config = cli.load()
+    if all_modules:
+        _install_all(
+            config, cli.path, force=force, offline=offline,
+            allow_root=allow_root, registry_url=registry_url,
+        )
+        return
     if not name and not source:
-        raise ModuleError("give a module name, or a --source to install from")
+        raise ModuleError("give a module name, a --source to install from, or --all")
 
     console.print(f"Installing {name or source} ...")
     installer = installer_for(config, offline=offline, allow_root=allow_root)
     result = installer.install(name, version=version, source_spec=source, force=force)
     _report_install(result, config, cli.path)
+
+
+def _install_all(
+    config: Config,
+    config_path: Path,
+    *,
+    force: bool,
+    offline: bool,
+    allow_root: bool,
+    registry_url: str | None,
+) -> None:
+    """Install every module the registry lists. One module failing does not stop
+    the rest: each result is reported and a summary follows, and the command
+    exits non-zero if any failed."""
+    registry = registry_for(config, registry_url)
+    index = registry.load(offline=offline)
+    _report_registry(registry)
+    names = sorted(index.modules)
+    if not names:
+        console.print(f"The registry at {registry.url} lists no modules.")
+        return
+
+    store = ModuleStore.from_config(config)
+    installer = installer_for(
+        config, offline=offline, allow_root=allow_root, registry_url=registry_url
+    )
+    installed: list[str] = []
+    skipped: list[str] = []
+    failed: list[str] = []
+    for name in names:
+        if store.is_installed(name) and not force:
+            skipped.append(name)
+            console.print(f"[dim]skip[/dim] {name} (already installed; use --force to reinstall)")
+            continue
+        console.print(f"Installing {name} ...")
+        try:
+            installer.install(name, force=force)
+            installed.append(name)
+        except CLI_ERRORS as e:
+            failed.append(name)
+            # The message may quote a module or a registry, so print it as text.
+            err.print(f"[red]failed[/red] {name}: ", Text(str(e)), sep="")
+
+    console.print(
+        f"\n[green]{len(installed)} installed[/green], {len(skipped)} skipped, "
+        f"{len(failed)} failed."
+    )
+    if installed:
+        console.print(
+            f"Add policy rules for the new tools in {config_path}, then `vahub run`."
+        )
+    if failed:
+        raise typer.Exit(1)
 
 
 @app.command()

@@ -219,6 +219,43 @@ def test_module_add_from_a_local_source(cfg: Path) -> None:
     assert "time" in listing.stdout
 
 
+def test_module_add_all_installs_every_registry_module(cfg: Path, tmp_path: Path) -> None:
+    import json
+
+    src = Path(__file__).resolve().parents[2].parent / "vahub-modules" / "modules" / "time"
+    if not src.exists():
+        pytest.skip("vahub-modules checkout not present")
+    # A local registry with a path source, so no network and no git.
+    registry = tmp_path / "registry.json"
+    registry.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "updated_at": "2026-08-16",
+                "modules": {
+                    "time": {
+                        "description": "time",
+                        "latest": "0.1.0",
+                        "versions": {"0.1.0": {"source": {"type": "path", "path": str(src)}}},
+                    }
+                },
+            }
+        )
+    )
+    added = run(cfg, "module", "add", "--all", "--registry", str(registry), "--offline")
+    assert added.exit_code == 0 and "1 installed" in added.stdout
+    assert "time" in run(cfg, "module", "list").stdout
+
+    # Idempotent: a second --all skips what is already installed.
+    again = run(cfg, "module", "add", "--all", "--registry", str(registry), "--offline")
+    assert again.exit_code == 0 and "skip" in again.stdout.lower()
+
+
+def test_module_add_with_no_name_or_source_or_all_errors(cfg: Path) -> None:
+    r = run(cfg, "module", "add")
+    assert r.exit_code != 0
+
+
 # --------------------------------------------------------------------------
 # error handling
 # --------------------------------------------------------------------------

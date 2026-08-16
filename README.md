@@ -113,6 +113,14 @@ boundary and a uid, not a sandbox; policy rules are written by hand (the boundar
 conversation memory is shallow and resets on restart; replies are not streamed; there is no wake word and
 no clustering.
 
+## The vahub project
+
+Three repositories, one project:
+
+- **[vahub](https://github.com/LynnDelpy/vahub)** (this one). The hub: agent loop, policy gate, supervisor, scheduler, web UI.
+- **[vahub-modules](https://github.com/LynnDelpy/vahub-modules)**. The module catalog and first-party modules.
+- **[vahub-docs](https://github.com/LynnDelpy/vahub-docs)**. The full documentation.
+
 ## License
 
 MIT. See [LICENSE](LICENSE).

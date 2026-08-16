@@ -227,3 +227,26 @@ def test_a_malformed_config_is_a_clean_error(tmp_path: Path) -> None:
     broken.write_text("web:\n  port: not-a-number\n")
     r = runner.invoke(app, ["--config", str(broken), "doctor", "--offline"])
     assert r.exit_code != 0
+
+
+def test_an_unwritable_state_dir_is_a_clean_error(tmp_path: Path, monkeypatch, capsys) -> None:
+    # A command that touches the database when its state directory cannot be
+    # created (e.g. the default /var/lib/vahub for a non-root user) must print a
+    # message with a way forward, not a traceback. Exercised through main(),
+    # which is where the error funnel lives.
+    import sys as _sys
+
+    a_file = tmp_path / "a_file"
+    a_file.write_text("x")  # its "subdirectory" cannot be created
+    cfg = tmp_path / "vahub.yaml"
+    cfg.write_text(f"hub:\n  state_dir: {a_file}/state\n  modules_dir: {tmp_path}/m\n")
+    monkeypatch.setattr(_sys, "argv", ["vahub", "--config", str(cfg), "audit"])
+
+    from vahub.cli.main import main
+
+    with pytest.raises(SystemExit) as exc:
+        main()
+    assert exc.value.code == 1
+    captured = capsys.readouterr()
+    assert "Traceback" not in (captured.err + captured.out)
+    assert "error:" in captured.err

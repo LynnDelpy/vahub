@@ -11,6 +11,7 @@ misspelled key helps nobody at three in the morning.
 
 from __future__ import annotations
 
+import errno
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -114,6 +115,18 @@ def main() -> None:
         # The message is written for a terminal and may quote a file, so it is
         # printed as text rather than parsed as rich markup.
         err.print("[red]error:[/red] ", Text(str(e)), sep="")
+        sys.exit(1)
+    except OSError as e:
+        # A filesystem or permission problem (most often the state directory not
+        # being writable) is an environment issue, not a bug: turn it into a
+        # message with a way forward instead of a traceback.
+        err.print("[red]error:[/red] ", Text(str(e)), sep="")
+        if getattr(e, "errno", None) in (errno.EACCES, errno.EPERM):
+            err.print(
+                "[dim]the hub could not create or write its files. Run `vahub init` first (it picks a "
+                "writable location when you are not root), or point hub.state_dir and hub.modules_dir "
+                "at a directory you own.[/dim]"
+            )
         sys.exit(1)
     except KeyboardInterrupt:
         err.print("\ninterrupted")

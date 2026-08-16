@@ -400,10 +400,10 @@ class Installer:
 
         # Always resolve and report the commit that was actually checked out. A
         # git tag is not immutable: it can be moved to point at different code
-        # after it was first reviewed. Recording the sha turns "installed the
-        # tag" into "installed this exact commit", which is what a later audit or
-        # a reinstall needs to detect drift. When the rev is itself a full sha,
-        # the resolved HEAD must equal it.
+        # after it was first reviewed. Reporting the resolved commit in the
+        # install output turns "installed the tag" into "installed this exact
+        # commit", so an operator watching the install has the sha to record.
+        # When the rev is itself a full sha, the resolved HEAD must equal it.
         head = self._run(["git", "-C", str(clone), "rev-parse", "HEAD"], what="git rev-parse")
         resolved_commit = head.stdout.strip()
         self._say(f"resolved {source.rev} to commit {resolved_commit}")

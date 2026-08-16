@@ -209,8 +209,15 @@ class ModuleAPI:
     ) -> dict[str, Any]:
         module = mod.name
         client = mod.client
-        if client is None:  # pragma: no cover - state checked by the caller
-            return {"ok": False, "error": "module_not_ready", "detail": mod.state.value}
+        if client is None:
+            # The caller checks readiness first, but a module can die in the
+            # window between that check and here, and for a confirmed call the
+            # pending row is already consumed. Audit the loss rather than
+            # returning a bare error that leaves no record of what was approved.
+            return await self._failure(
+                principal, module, tool, args, decision, "module_not_ready",
+                time.monotonic(), mod.state.value,
+            )
 
         async with mod.lock:  # one in-flight call per module
             t0 = time.monotonic()

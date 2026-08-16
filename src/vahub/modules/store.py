@@ -26,7 +26,7 @@ from typing import TYPE_CHECKING, Any
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from vahub.__about__ import __version__
-from vahub.contracts.manifest import NAME_RE, Manifest
+from vahub.contracts.manifest import NAME_RE, Manifest, resolve_config_value
 from vahub.contracts.registry import GitSource, PathSource, PypiSource, Source
 
 if TYPE_CHECKING:
@@ -107,12 +107,19 @@ class InstalledModule:
         return self.manifest is not None and self.module_dir.is_dir()
 
     def missing_config(self, env: Mapping[str, str] | None = None) -> list[str]:
-        """Required config keys that are not in the environment. The hub passes
-        only declared keys to a module, so an unset one means it cannot start."""
+        """Required config keys that are not in the environment, in either the
+        per-module ``VAHUB_MOD_<NAME>_<KEY>`` form or the bare ``<KEY>``. The hub
+        passes only declared keys to a module, so an unset one means it cannot
+        start. This must match the supervisor's own check, or a module configured
+        the scoped way is reported unconfigured when it is not."""
         if self.manifest is None:
             return []
         environ = os.environ if env is None else env
-        return [key for key in self.manifest.config.required if not environ.get(key)]
+        return [
+            key
+            for key in self.manifest.config.required
+            if resolve_config_value(self.name, key, environ) is None
+        ]
 
     def as_dict(self) -> dict[str, Any]:
         return {

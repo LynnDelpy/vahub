@@ -735,7 +735,12 @@ def _write_env_file(path: Path, values: dict[str, str]) -> None:
 def _reload(path: Path) -> Config:
     from vahub.config.loader import load_config
 
-    return load_config(path)
+    # Validate the structure, not the secret plumbing. A production config
+    # references secrets by ${file:/run/secrets/...} or an env var that only
+    # exists on the deployment target, so a strict load here would fail on a
+    # perfectly good file just because the credential is not on this machine
+    # yet. `vahub doctor` and startup do the strict check where it belongs.
+    return load_config(path, strict_secrets=False)
 
 
 # --------------------------------------------------------------------------

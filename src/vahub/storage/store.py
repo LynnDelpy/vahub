@@ -156,7 +156,15 @@ class Store:
         # backup overlaps a write.
         await db.execute("PRAGMA busy_timeout=5000")
         self._db = db
-        await self._migrate()
+        try:
+            await self._migrate()
+        except Exception:
+            # A half-applied migration must not leave the store looking open with
+            # an incomplete schema. Drop the connection so open() can be retried
+            # or the failure surfaced, rather than every later query failing oddly.
+            await db.close()
+            self._db = None
+            raise
         # The migration wrote, so the WAL/SHM sidecars now exist. Tighten them
         # once more; the earlier pass ran before they were created.
         for suffix in ("-wal", "-shm"):
@@ -246,11 +254,26 @@ class Store:
             (time.time(), principal, module, tool, payload, decision, result, duration_ms),
         )
 
-    async def recent_tool_calls(self, limit: int = 100) -> list[dict[str, Any]]:
+    async def recent_tool_calls(
+        self, limit: int = 100, *, principal: str | None = None, decision: str | None = None
+    ) -> list[dict[str, Any]]:
+        # Filters are applied in SQL, before the limit, so `--denied -n 50` means
+        # the last 50 denied calls, not the denials that happen to fall within the
+        # last 50 calls of any kind.
+        where: list[str] = []
+        params: list[Any] = []
+        if principal:
+            where.append("principal = ?")
+            params.append(principal)
+        if decision:
+            where.append("decision = ?")
+            params.append(decision)
+        clause = (" WHERE " + " AND ".join(where)) if where else ""
+        params.append(max(1, int(limit)))
         cur = await self.db.execute(
             "SELECT id, ts, principal, module, tool, args, decision, result, duration_ms"
-            " FROM tool_calls ORDER BY id DESC LIMIT ?",
-            (max(1, int(limit)),),
+            f" FROM tool_calls{clause} ORDER BY id DESC LIMIT ?",
+            tuple(params),
         )
         return [dict(row) for row in await cur.fetchall()]
 

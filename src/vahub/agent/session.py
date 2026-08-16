@@ -7,9 +7,11 @@ they look:
 * Trimming keeps the system message. It is the message that tells the model tool
   results are data, so dropping it as "the oldest message" would quietly remove
   a security property halfway through a long conversation.
-* Trimming never leaves a tool result at the front of the history. Providers
-  reject a tool result that does not follow the assistant message that asked for
-  it, so a naive tail slice turns a long conversation into a 400.
+* Trimming never leaves history starting mid-turn. A tool result with no
+  preceding assistant call, or an assistant reply with no preceding user
+  message, is a 400 from the providers (Anthropic in particular requires the
+  first message after the system prompt to be a user message). So the tail is
+  advanced to the next user message, which is where a turn actually begins.
 """
 
 from __future__ import annotations
@@ -75,7 +77,11 @@ class SessionStore:
 
         keep = max(self._max_messages - len(head), 1)
         start = max(len(body) - keep, 0)
-        while start < len(body) and body[start].get("role") == "tool":
+        # A turn begins with a user message. Starting the kept history on a tool
+        # result (no preceding assistant call) or an assistant reply (no
+        # preceding user message) is rejected by the providers, so advance to the
+        # next user message.
+        while start < len(body) and body[start].get("role") in ("tool", "assistant"):
             start += 1
         session.messages = head + body[start:]
 

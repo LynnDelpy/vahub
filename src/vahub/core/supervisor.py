@@ -35,7 +35,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
-from ..contracts.manifest import HEALTH_TOOL, Manifest
+from ..contracts.manifest import HEALTH_TOOL, Manifest, module_env_prefix, resolve_config_value
 from . import metrics
 from .bus import EventBus
 from .logging import get_logger
@@ -47,10 +47,6 @@ log = get_logger("supervisor")
 STDERR_RING = 200
 
 
-def _env_scope(module_name: str) -> str:
-    """The per-module secret prefix, e.g. `VAHUB_MOD_HOMEASSISTANT_`. Module
-    names are `[a-z0-9-]`, so only the hyphen needs folding to an underscore."""
-    return "VAHUB_MOD_" + module_name.upper().replace("-", "_") + "_"
 
 # Cap on the backoff exponent: 2**6 is about a minute, which is long enough for
 # a transient failure to clear and short enough that a recovered module comes
@@ -137,7 +133,11 @@ class Supervisor:
                 log.error("manifest_invalid", path=str(path), error=str(e))
                 continue
             mod = Module(manifest=expanded)
-            mod.missing_config = [k for k in expanded.config.required if k not in os.environ]
+            mod.missing_config = [
+                k
+                for k in expanded.config.required
+                if resolve_config_value(expanded.name, k, os.environ) is None
+            ]
             if mod.missing_config:
                 mod.state = State.UNCONFIGURED
                 mod.last_error = f"missing config: {', '.join(mod.missing_config)}"
@@ -359,7 +359,7 @@ class Supervisor:
             # until the buffer happens to fill.
             "PYTHONUNBUFFERED": "1",
         }
-        scope = _env_scope(manifest.name)
+        scope = module_env_prefix(manifest.name)
         for key in (*manifest.config.required, *manifest.config.optional):
             scoped = os.environ.get(scope + key)
             if scoped is not None:

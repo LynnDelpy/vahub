@@ -56,11 +56,32 @@ Two rules that matter:
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+
+def module_env_prefix(module_name: str) -> str:
+    """The per-module secret prefix, e.g. ``VAHUB_MOD_HOMEASSISTANT_``. Module
+    names are ``[a-z0-9-]``, so only the hyphen needs folding to an underscore."""
+    return "VAHUB_MOD_" + module_name.upper().replace("-", "_") + "_"
+
+
+def resolve_config_value(module_name: str, key: str, environ: Mapping[str, str]) -> str | None:
+    """The value a module actually receives for a declared config key. The
+    per-module ``VAHUB_MOD_<NAME>_<KEY>`` form takes precedence over a bare
+    ``<KEY>``. Both the supervisor (deciding whether a module is configured and
+    building its environment) and the CLI (reporting missing config) must agree
+    on this, or a module configured the scoped way is wrongly called
+    unconfigured and never started."""
+    scoped = environ.get(module_env_prefix(module_name) + key)
+    if scoped is not None:
+        return scoped
+    return environ.get(key)
+
 
 MANIFEST_SCHEMA_VERSION = 1
 
@@ -186,12 +207,18 @@ class Manifest(Strict):
 
 def load_manifests(directory: Path) -> dict[str, Manifest]:
     """Read every manifest in a directory. A broken one is skipped rather than
-    preventing every other module from starting."""
+    preventing every other module from starting: a single hand-edited file with
+    a YAML error or an unknown key must not empty the whole module set."""
     out: dict[str, Manifest] = {}
     if not directory.is_dir():
         return out
     for path in sorted(directory.glob("*.yaml")):
-        manifest = Manifest.from_file(path)
+        try:
+            manifest = Manifest.from_file(path)
+        except Exception:
+            # One bad file must not sink the rest. Callers that need to report a
+            # specific broken manifest use manifest_errors() per path.
+            continue
         out[manifest.name] = manifest
     return out
 

@@ -163,6 +163,18 @@ def test_env_override_coerces_scalars(monkeypatch: pytest.MonkeyPatch, tmp_path:
     assert cfg.budgets.tokens_per_day is None
 
 
+def test_string_env_override_is_not_mis_coerced(monkeypatch, tmp_path: Path) -> None:
+    # A string setting that looks like a keyword or a number must stay a string.
+    # VAHUB_SPEECH__STT__PROVIDER=none targets a Literal[..., "none"] field; the
+    # loader used to coerce "none" to Python None and fail validation. A model id
+    # that is all digits must likewise stay a string, not become an int.
+    monkeypatch.setenv("VAHUB_SPEECH__STT__PROVIDER", "none")
+    monkeypatch.setenv("VAHUB_LLM__MODEL", "9000")
+    cfg = load_config(tmp_path / "absent.yaml")
+    assert cfg.speech.stt.provider == "none"
+    assert cfg.llm.model == "9000"
+
+
 def test_env_override_of_an_unknown_key_is_still_an_error(monkeypatch, tmp_path: Path) -> None:
     # Strictness must not be bypassable by using the environment instead of YAML.
     monkeypatch.setenv("VAHUB_WEB__PROT", "9000")

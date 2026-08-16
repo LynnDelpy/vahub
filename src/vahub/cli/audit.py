@@ -49,12 +49,12 @@ def audit(
     """Show recent tool calls: who asked, what for, and what the policy decided."""
     cli: CliState = ctx.obj
     config = cli.load()
-    rows = asyncio.run(_read(config, limit))
-
-    if principal:
-        rows = [r for r in rows if str(r.get("principal", "")) == principal]
-    if denied:
-        rows = [r for r in rows if str(r.get("decision", "")) == "deny"]
+    # The filters are applied in the query, before the limit, so `--denied -n 50`
+    # returns the 50 most recent denials rather than the denials that happen to
+    # be among the 50 most recent calls.
+    rows = asyncio.run(
+        _read(config, limit, principal=principal or None, decision="deny" if denied else None)
+    )
 
     if as_json:
         console.print_json(json.dumps(rows, default=str))
@@ -91,12 +91,14 @@ def _when(ts: Any) -> str:
         return str(ts or "")
 
 
-async def _read(config: Any, limit: int) -> list[dict[str, Any]]:
+async def _read(
+    config: Any, limit: int, *, principal: str | None = None, decision: str | None = None
+) -> list[dict[str, Any]]:
     from vahub.storage.store import Store
 
     store = Store(config.hub.db_path)
     await store.open()
     try:
-        return await store.recent_tool_calls(limit=limit)
+        return await store.recent_tool_calls(limit=limit, principal=principal, decision=decision)
     finally:
         await store.close()

@@ -73,13 +73,10 @@ def create_app(rt: Runtime) -> FastAPI:
         openapi_url=None,
     )
 
-    @app.middleware("http")
-    async def security_headers(request: Request, call_next):
-        response = await call_next(request)
-        for header, value in _BASE_HEADERS.items():
-            response.headers.setdefault(header, value)
-        return response
-
+    # Registration order matters: the last-registered middleware is outermost.
+    # limit_body_size is registered first (inner) and security_headers second
+    # (outer), so the hardening headers are applied even to an early 413 from the
+    # size check.
     @app.middleware("http")
     async def limit_body_size(request: Request, call_next):
         # Reject an oversized body by its declared length before it is buffered.
@@ -95,6 +92,13 @@ def create_app(rt: Runtime) -> FastAPI:
         ):
             return JSONResponse({"ok": False, "error": "request_too_large"}, status_code=413)
         return await call_next(request)
+
+    @app.middleware("http")
+    async def security_headers(request: Request, call_next):
+        response = await call_next(request)
+        for header, value in _BASE_HEADERS.items():
+            response.headers.setdefault(header, value)
+        return response
 
     @app.get("/health")
     async def health() -> JSONResponse:

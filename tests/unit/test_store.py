@@ -43,3 +43,19 @@ async def test_consume_pending_ignores_a_missing_or_non_pending_row(store) -> No
 async def test_database_is_not_world_or_group_readable(store) -> None:
     mode = stat.S_IMODE(os.stat(store.path).st_mode)
     assert mode & 0o077 == 0, f"db mode {oct(mode)} exposes the audit log to other users"
+
+
+async def test_recent_tool_calls_filters_before_the_limit(store) -> None:
+    # One old denial, then a wall of newer allowed calls. `--denied -n 1` must
+    # find the denial, not report nothing because it fell outside the last N.
+    await store.record_tool_call("agent", "door", "unlock", {}, "deny", "denied", 1.0)
+    for _ in range(20):
+        await store.record_tool_call("agent", "time", "now", {}, "allow", "ok", 1.0)
+
+    denied = await store.recent_tool_calls(limit=1, decision="deny")
+    assert len(denied) == 1 and denied[0]["tool"] == "unlock"
+
+    # Filtering by principal likewise applies in SQL, before the limit.
+    await store.record_tool_call("scheduler", "time", "now", {}, "allow", "ok", 1.0)
+    sched = await store.recent_tool_calls(limit=5, principal="scheduler")
+    assert [r["principal"] for r in sched] == ["scheduler"]

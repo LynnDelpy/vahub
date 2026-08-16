@@ -200,15 +200,26 @@ def test_load_manifests_on_a_missing_directory_is_empty(tmp_path: Path) -> None:
     assert load_manifests(tmp_path / "nope") == {}
 
 
-def test_load_manifests_surfaces_a_broken_manifest(tmp_path: Path) -> None:
-    # Note: the docstring on load_manifests says a broken manifest is skipped,
-    # but the code lets the error out. Pinning the behaviour that ships, since
-    # the caller (the supervisor) is what decides whether one bad file should
-    # stop every other module from starting.
+def test_resolve_config_value_prefers_the_scoped_form() -> None:
+    from vahub.contracts.manifest import module_env_prefix, resolve_config_value
+
+    env = {"HA_TOKEN": "shared", "VAHUB_MOD_HOMEASSISTANT_HA_TOKEN": "scoped"}
+    # The per-module value wins over a bare one of the same name.
+    assert resolve_config_value("homeassistant", "HA_TOKEN", env) == "scoped"
+    # A module with no scoped value still gets the bare one (backward compatible).
+    assert resolve_config_value("evil", "HA_TOKEN", env) == "shared"
+    assert resolve_config_value("m", "MISSING", {}) is None
+    assert module_env_prefix("home-assistant") == "VAHUB_MOD_HOME_ASSISTANT_"
+
+
+def test_load_manifests_skips_a_broken_manifest(tmp_path: Path) -> None:
+    # As documented: one hand-edited, invalid file must not empty the whole
+    # module set. The healthy manifest still loads; the broken one is skipped and
+    # its error is available separately through manifest_errors().
     (tmp_path / "good.yaml").write_text(Manifest.model_validate(MINIMAL).to_yaml())
     (tmp_path / "bad.yaml").write_text("name: Bad Name\nruntime: {command: []}\n")
-    with pytest.raises(ValidationError):
-        load_manifests(tmp_path)
+    loaded = load_manifests(tmp_path)
+    assert list(loaded) == [MINIMAL["name"]]
 
 
 def test_manifest_errors_reports_without_raising(tmp_path: Path) -> None:

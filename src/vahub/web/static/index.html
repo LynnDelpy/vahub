@@ -251,12 +251,19 @@
     scroll(true);
 
     // The approval expires. Saying so avoids someone approving into a void.
+    // A live event carries ttl_s (seconds remaining); a row loaded from
+    // /api/pending carries an absolute expires_at. Support both, so the live
+    // card shows a countdown and self-expires like the reloaded one.
     let countdown = null;
-    if (p.expires_at) {
+    const expiresAt = p.expires_at || (p.ttl_s ? Date.now() / 1000 + p.ttl_s : null);
+    const stopCountdown = function () {
+      if (countdown) { clearInterval(countdown); countdown = null; }
+    };
+    if (expiresAt) {
       const tick = function () {
-        const left = Math.round(p.expires_at - Date.now() / 1000);
+        const left = Math.round(expiresAt - Date.now() / 1000);
         if (left <= 0) {
-          clearInterval(countdown);
+          stopCountdown();
           card.remove();
           bubble("That approval expired. Ask again if you still want it.", "theirs");
         } else {
@@ -268,12 +275,15 @@
     }
 
     const finish = function (text, kind) {
-      if (countdown) clearInterval(countdown);
+      stopCountdown();
       card.remove();
       if (text) bubble(text, kind || "theirs");
     };
 
     yes.addEventListener("click", async function () {
+      // Stop the countdown immediately: the request is in flight and a tick that
+      // fired now would remove the card and print a contradictory "expired".
+      stopCountdown();
       yes.disabled = no.disabled = true;
       try {
         const r = await fetch("/api/confirm/" + encodeURIComponent(id), { method: "POST" });

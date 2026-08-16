@@ -46,27 +46,29 @@ def default_config_path() -> Path:
 
 
 def _coerce(raw: str) -> Any:
-    """Env vars are strings; YAML/JSON scalars are not. Parse where it is
-    unambiguous so VAHUB_WEB__PORT=9000 becomes an int and a JSON list works."""
+    """Turn an env-var string into the shape a config leaf needs, without
+    guessing from the value.
+
+    Only a JSON array is parsed structurally, for list-valued settings such as
+    web.origin_allowlist. The explicit `null`/`~` sentinel clears a nullable
+    field. Everything else stays a string and pydantic coerces it to the target
+    field's own type when the model validates: "9000" -> int for a port, "2.5"
+    -> float, "true"/"false" -> bool, and "none" -> the literal "none".
+
+    Coercing here by the value's shape instead is wrong: it turns a string
+    setting that merely looks like a number, a bool, or "none" into the wrong
+    Python type, which then fails validation. VAHUB_SPEECH__STT__PROVIDER=none is
+    the standard example: the field is Literal[..., "none"], and coercing "none"
+    to Python None broke it.
+    """
     text = raw.strip()
-    if text[:1] in "[{":
+    if text[:1] == "[":
         try:
             return json.loads(text)
         except ValueError:
             return raw
-    lowered = text.lower()
-    if lowered in ("true", "false"):
-        return lowered == "true"
-    if lowered in ("null", "none", "~"):
+    if text.lower() in ("null", "~"):
         return None
-    try:
-        return int(text)
-    except ValueError:
-        pass
-    try:
-        return float(text)
-    except ValueError:
-        pass
     return raw
 
 

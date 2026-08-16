@@ -26,6 +26,7 @@ from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
+from . import auth
 from .security import websocket_origin_allowed
 
 if TYPE_CHECKING:
@@ -80,6 +81,13 @@ def build_router(rt: Runtime) -> APIRouter:
         # this check is the only thing stopping a cross-site page from reading
         # the hub's event stream.
         if not websocket_origin_allowed(websocket, rt.config):
+            await websocket.close(code=1008)
+            return
+        # The event stream carries pending confirmations, so it is gated by the
+        # same login as the API when auth is on.
+        if rt.config.web.auth.enabled and await auth.username_from_cookies(
+            websocket.cookies, rt
+        ) is None:
             await websocket.close(code=1008)
             return
         await websocket.accept()

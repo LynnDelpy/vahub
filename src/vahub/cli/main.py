@@ -22,6 +22,7 @@ from rich.text import Text
 from vahub.__about__ import __version__
 from vahub.cli import audit as audit_cmd
 from vahub.cli import config_cmd, doctor, init, module, run
+from vahub.cli import user as user_cmd
 from vahub.cli.module import CLI_ERRORS
 from vahub.config.loader import default_config_path, load_config
 from vahub.config.models import Config, ConfigError
@@ -50,6 +51,7 @@ app = typer.Typer(
 )
 app.add_typer(module.app, name="module")
 app.add_typer(config_cmd.app, name="config")
+app.add_typer(user_cmd.app, name="user")
 app.command("init")(init.init)
 app.command("run")(run.run)
 app.command("serve")(run.serve)

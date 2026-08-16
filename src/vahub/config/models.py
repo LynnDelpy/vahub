@@ -65,6 +65,23 @@ REMOVED_WEB_KEYS: dict[str, str] = {
 }
 
 
+class AuthConfig(Strict):
+    """The hub's own login. When enabled, the web routes require a session from a
+    successful sign in; accounts are created with `vahub user add`, never by the
+    hub itself. When disabled, the hub trusts a reverse proxy as before."""
+
+    # On by default: a hub reachable by a browser should not be open. With it on
+    # and no accounts yet, the page says to create one rather than letting anyone
+    # in. Turn it off only when a proxy in front already authenticates.
+    enabled: bool = True
+    # How long a login lasts before it must be repeated.
+    session_ttl_s: float = Field(60 * 60 * 24 * 14, gt=0)
+    # The Secure flag on the session cookie. Leave on for a real (HTTPS)
+    # deployment; a plain-http LAN test has to turn it off or the browser drops
+    # the cookie and every login appears to fail.
+    cookie_secure: bool = True
+
+
 class WebConfig(Strict):
     @model_validator(mode="before")
     @classmethod
@@ -75,8 +92,7 @@ class WebConfig(Strict):
                     raise ValueError(f"web.{key} was removed: {why}")
         return data
 
-    # Loopback by default: the hub has no authentication of its own, so exposing
-    # it directly is a deliberate act, not an accident of the default config.
+    # Loopback by default: exposing the hub to a network is a deliberate act.
     host: str = "127.0.0.1"
     port: int = Field(8080, ge=1, le=65535)
     # Browser origins allowed to call the API. Same-origin does not stop a
@@ -86,6 +102,8 @@ class WebConfig(Strict):
     # Header the authenticating reverse proxy sets. Recorded in the audit log as
     # the acting principal. Informational: it is never an authorization input.
     auth_subject_header: str = "X-Auth-Subject"
+    # The hub's built-in login.
+    auth: AuthConfig = Field(default_factory=AuthConfig)
 
 
 class BudgetConfig(Strict):

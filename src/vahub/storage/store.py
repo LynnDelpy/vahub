@@ -111,7 +111,63 @@ _V1: tuple[str, ...] = (
     "CREATE INDEX idx_pending_status ON pending_calls(status, expires_at)",
 )
 
-MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = ((1, _V1),)
+# v2: accounts, sessions, and the runtime-editable state the UI and the AI own:
+# preferences, saved locations, and schedules created at runtime. Policy rules
+# and accounts are deliberately NOT in here as UI-editable rows; policy stays in
+# the file, and accounts are managed only by the CLI.
+_V2: tuple[str, ...] = (
+    """
+    CREATE TABLE users (
+        username      TEXT PRIMARY KEY,
+        password_hash TEXT NOT NULL,   -- scrypt$..., never a clear password
+        display_name  TEXT,
+        created_at    REAL NOT NULL,
+        disabled      INTEGER NOT NULL DEFAULT 0
+    )
+    """,
+    """
+    CREATE TABLE sessions (
+        id          TEXT PRIMARY KEY,  -- opaque random token, the cookie value
+        username    TEXT NOT NULL,
+        created_at  REAL NOT NULL,
+        expires_at  REAL NOT NULL
+    )
+    """,
+    # Preferences: units, spoken language, TTS voice, and anything else a person
+    # or the assistant wants to remember. Value is JSON so it is not limited to
+    # strings.
+    """
+    CREATE TABLE app_settings (
+        key         TEXT PRIMARY KEY,
+        value       TEXT,              -- JSON-encoded
+        updated_at  REAL NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE locations (
+        name        TEXT PRIMARY KEY,  -- home, work, gym, ...
+        label       TEXT,
+        latitude    REAL,
+        longitude   REAL,
+        address     TEXT,
+        updated_at  REAL NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE dyn_schedules (
+        id          TEXT PRIMARY KEY,
+        cron        TEXT NOT NULL,
+        enabled     INTEGER NOT NULL DEFAULT 1,
+        steps       TEXT NOT NULL,     -- JSON list of {module, tool, args, timeout_s}
+        description TEXT,
+        created_by  TEXT,              -- the username or the assistant
+        created_at  REAL NOT NULL
+    )
+    """,
+    "CREATE INDEX idx_sessions_expires ON sessions(expires_at)",
+)
+
+MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = ((1, _V1), (2, _V2))
 
 SCHEMA_VERSION = MIGRATIONS[-1][0]
 
@@ -430,3 +486,176 @@ class Store:
         cur = await self.db.execute("SELECT tokens FROM budget_usage WHERE day=?", (day,))
         row = await cur.fetchone()
         return int(row["tokens"]) if row else 0
+
+    # --- accounts ---------------------------------------------------------
+    async def create_user(self, username: str, password_hash: str, display_name: str | None) -> None:
+        await self.db.execute(
+            "INSERT INTO users(username, password_hash, display_name, created_at, disabled)"
+            " VALUES(?,?,?,?,0)",
+            (username, password_hash, display_name, time.time()),
+        )
+
+    async def get_user(self, username: str) -> dict[str, Any] | None:
+        cur = await self.db.execute("SELECT * FROM users WHERE username=?", (username,))
+        row = await cur.fetchone()
+        return dict(row) if row else None
+
+    async def list_users(self) -> list[dict[str, Any]]:
+        cur = await self.db.execute(
+            "SELECT username, display_name, created_at, disabled FROM users ORDER BY username"
+        )
+        return [dict(row) for row in await cur.fetchall()]
+
+    async def count_users(self) -> int:
+        cur = await self.db.execute("SELECT COUNT(*) AS n FROM users WHERE disabled=0")
+        row = await cur.fetchone()
+        return int(row["n"]) if row else 0
+
+    async def set_password(self, username: str, password_hash: str) -> bool:
+        cur = await self.db.execute(
+            "UPDATE users SET password_hash=? WHERE username=?", (password_hash, username)
+        )
+        return bool(cur.rowcount)
+
+    async def set_user_disabled(self, username: str, disabled: bool) -> bool:
+        cur = await self.db.execute(
+            "UPDATE users SET disabled=? WHERE username=?", (1 if disabled else 0, username)
+        )
+        return bool(cur.rowcount)
+
+    async def delete_user(self, username: str) -> bool:
+        await self.db.execute("DELETE FROM sessions WHERE username=?", (username,))
+        cur = await self.db.execute("DELETE FROM users WHERE username=?", (username,))
+        return bool(cur.rowcount)
+
+    # --- sessions ---------------------------------------------------------
+    async def create_session(self, sid: str, username: str, expires_at: float) -> None:
+        await self.db.execute(
+            "INSERT INTO sessions(id, username, created_at, expires_at) VALUES(?,?,?,?)",
+            (sid, username, time.time(), expires_at),
+        )
+
+    async def session_user(self, sid: str) -> str | None:
+        """The username for a live, unexpired session, or None. A disabled
+        account's sessions never resolve, so revoking access is immediate."""
+        cur = await self.db.execute(
+            "SELECT s.username FROM sessions s JOIN users u ON u.username = s.username"
+            " WHERE s.id=? AND s.expires_at > ? AND u.disabled=0",
+            (sid, time.time()),
+        )
+        row = await cur.fetchone()
+        return str(row["username"]) if row else None
+
+    async def delete_session(self, sid: str) -> None:
+        await self.db.execute("DELETE FROM sessions WHERE id=?", (sid,))
+
+    async def drop_user_sessions(self, username: str) -> None:
+        """End every session for an account, e.g. after a password change."""
+        await self.db.execute("DELETE FROM sessions WHERE username=?", (username,))
+
+    async def sweep_sessions(self) -> int:
+        cur = await self.db.execute("DELETE FROM sessions WHERE expires_at <= ?", (time.time(),))
+        return cur.rowcount if cur.rowcount and cur.rowcount > 0 else 0
+
+    # --- preferences (app_settings) --------------------------------------
+    async def get_setting(self, key: str) -> Any:
+        cur = await self.db.execute("SELECT value FROM app_settings WHERE key=?", (key,))
+        row = await cur.fetchone()
+        if row is None or row["value"] is None:
+            return None
+        try:
+            return json.loads(row["value"])
+        except ValueError:
+            return None
+
+    async def all_settings(self) -> dict[str, Any]:
+        cur = await self.db.execute("SELECT key, value FROM app_settings ORDER BY key")
+        out: dict[str, Any] = {}
+        for row in await cur.fetchall():
+            try:
+                out[row["key"]] = json.loads(row["value"]) if row["value"] is not None else None
+            except ValueError:
+                out[row["key"]] = None
+        return out
+
+    async def set_setting(self, key: str, value: Any) -> None:
+        await self.db.execute(
+            "INSERT INTO app_settings(key, value, updated_at) VALUES(?,?,?)"
+            " ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at",
+            (key, json.dumps(value), time.time()),
+        )
+
+    async def delete_setting(self, key: str) -> bool:
+        cur = await self.db.execute("DELETE FROM app_settings WHERE key=?", (key,))
+        return bool(cur.rowcount)
+
+    # --- locations --------------------------------------------------------
+    async def list_locations(self) -> list[dict[str, Any]]:
+        cur = await self.db.execute("SELECT * FROM locations ORDER BY name")
+        return [dict(row) for row in await cur.fetchall()]
+
+    async def get_location(self, name: str) -> dict[str, Any] | None:
+        cur = await self.db.execute("SELECT * FROM locations WHERE name=?", (name,))
+        row = await cur.fetchone()
+        return dict(row) if row else None
+
+    async def upsert_location(
+        self,
+        name: str,
+        *,
+        label: str | None = None,
+        latitude: float | None = None,
+        longitude: float | None = None,
+        address: str | None = None,
+    ) -> None:
+        await self.db.execute(
+            "INSERT INTO locations(name, label, latitude, longitude, address, updated_at)"
+            " VALUES(?,?,?,?,?,?)"
+            " ON CONFLICT(name) DO UPDATE SET label=excluded.label, latitude=excluded.latitude,"
+            " longitude=excluded.longitude, address=excluded.address, updated_at=excluded.updated_at",
+            (name, label, latitude, longitude, address, time.time()),
+        )
+
+    async def delete_location(self, name: str) -> bool:
+        cur = await self.db.execute("DELETE FROM locations WHERE name=?", (name,))
+        return bool(cur.rowcount)
+
+    # --- runtime schedules ------------------------------------------------
+    async def list_dyn_schedules(self) -> list[dict[str, Any]]:
+        cur = await self.db.execute("SELECT * FROM dyn_schedules ORDER BY created_at DESC")
+        out: list[dict[str, Any]] = []
+        for row in await cur.fetchall():
+            item = dict(row)
+            item["enabled"] = bool(item.get("enabled"))
+            try:
+                item["steps"] = json.loads(item.get("steps") or "[]")
+            except ValueError:
+                item["steps"] = []
+            out.append(item)
+        return out
+
+    async def add_dyn_schedule(
+        self,
+        sid: str,
+        cron: str,
+        steps: list[dict[str, Any]],
+        *,
+        description: str | None = None,
+        created_by: str | None = None,
+        enabled: bool = True,
+    ) -> None:
+        await self.db.execute(
+            "INSERT INTO dyn_schedules(id, cron, enabled, steps, description, created_by, created_at)"
+            " VALUES(?,?,?,?,?,?,?)",
+            (sid, cron, 1 if enabled else 0, json.dumps(steps), description, created_by, time.time()),
+        )
+
+    async def set_dyn_schedule_enabled(self, sid: str, enabled: bool) -> bool:
+        cur = await self.db.execute(
+            "UPDATE dyn_schedules SET enabled=? WHERE id=?", (1 if enabled else 0, sid)
+        )
+        return bool(cur.rowcount)
+
+    async def delete_dyn_schedule(self, sid: str) -> bool:
+        cur = await self.db.execute("DELETE FROM dyn_schedules WHERE id=?", (sid,))
+        return bool(cur.rowcount)

@@ -28,6 +28,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response
 from ..__about__ import __version__
 from ..core import metrics
 from . import api, ws
+from . import auth as web_auth
 from .security import check_origin
 
 if TYPE_CHECKING:
@@ -94,6 +95,19 @@ def create_app(rt: Runtime) -> FastAPI:
         return await call_next(request)
 
     @app.middleware("http")
+    async def require_login(request: Request, call_next):
+        # When the built-in login is on, every route but the page shell, the
+        # health probes, /api/me and /api/login needs a valid session. The page
+        # itself loads unauthenticated so its script can show a login form.
+        if (
+            rt.config.web.auth.enabled
+            and not web_auth.is_public_path(request.url.path)
+            and await web_auth.current_username(request, rt) is None
+        ):
+            return JSONResponse({"ok": False, "error": "auth_required"}, status_code=401)
+        return await call_next(request)
+
+    @app.middleware("http")
     async def security_headers(request: Request, call_next):
         response = await call_next(request)
         for header, value in _BASE_HEADERS.items():
@@ -143,6 +157,7 @@ def create_app(rt: Runtime) -> FastAPI:
             },
         )
 
+    app.include_router(web_auth.build_router(rt), prefix="/api")
     app.include_router(api.build_router(rt))
     app.include_router(ws.build_router(rt))
     return app

@@ -30,6 +30,7 @@ from fastapi import APIRouter, File, Form, HTTPException, Path, Request, UploadF
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
+from . import auth as web_auth
 from .security import auth_subject, check_origin
 
 if TYPE_CHECKING:
@@ -169,7 +170,9 @@ def build_router(rt: Runtime) -> APIRouter:
         # Confirming runs the arguments frozen when the call was gated, not
         # whatever the model may have produced since.
         check_origin(request, rt.config)
-        subject = auth_subject(request, rt.config)
+        # Prefer the logged-in account as the recorded subject; fall back to the
+        # reverse-proxy header when the built-in login is off.
+        subject = await web_auth.current_username(request, rt) or auth_subject(request, rt.config)
         result = await rt.moduleapi.confirm(pending_id, subject=subject)
         return JSONResponse(_as_dict(result, "confirm_error"))
 

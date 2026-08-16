@@ -34,7 +34,10 @@ def make_config(state_dir: Path, modules_dir: Path, **web: Any) -> Config:
     return Config.model_validate(
         {
             "hub": {"state_dir": str(state_dir), "modules_dir": str(modules_dir)},
-            "web": {"origin_allowlist": [ALLOWED_ORIGIN], **web},
+            # These tests predate the built-in login and exercise the assistant
+            # directly; auth is covered in test_auth. A test can turn it on by
+            # passing auth={"enabled": True} via the runtime fixture's param.
+            "web": {"origin_allowlist": [ALLOWED_ORIGIN], "auth": {"enabled": False}, **web},
             "llm": {"provider": "mock"},
             "policy": {"default": "deny", "rules": {}},
         }

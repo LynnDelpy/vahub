@@ -24,7 +24,7 @@ POLICY: dict[str, Any] = {
         "user": {"confirm": [], "deny": []},
     },
     "rules": {
-        "home.get_state": {"class": "read", "constraints": {"entity_id": {"matches": "^sensor\\."}}},
+        "home.get_state": {"class": "read", "constraints": {"entity_id": {"matches": "sensor\\..+"}}},
         "home.light_turn_on": {
             "class": "write",
             "constraints": {
@@ -32,8 +32,8 @@ POLICY: dict[str, Any] = {
                 "brightness_pct": {"range": [1, 100]},
             },
         },
-        "home.lock_unlock": {"class": "destructive", "constraints": {"entity_id": {"matches": "^lock\\."}}},
-        "home.light_turn_off": {"class": "write", "constraints": {"entity_id": {"matches": "^light\\."}}},
+        "home.lock_unlock": {"class": "destructive", "constraints": {"entity_id": {"matches": "lock\\..+"}}},
+        "home.light_turn_off": {"class": "write", "constraints": {"entity_id": {"matches": "light\\..+"}}},
         "notes.append": {"class": "write", "constraints": {"text": {"max_len": 10}}},
         "clock.now": {"class": "read"},
     },
@@ -109,6 +109,32 @@ def test_matches_constraint(gate: Gate) -> None:
     assert outcome(gate.evaluate("agent", "home", "get_state", {"entity_id": "lock.front"})) == "deny"
 
 
+def test_matches_is_a_full_match_not_a_search(make_gate) -> None:
+    # `matches` is a whitelist: it must describe the WHOLE value. With re.search
+    # each of these would be allowed because the pattern is found somewhere
+    # inside; with re.fullmatch a leading or trailing extra, or a newline, is
+    # rejected.
+    gate = make_gate(
+        {
+            "default": "deny",
+            "principals": {"agent": {"confirm": [], "deny": []}},
+            "rules": {
+                "home.get_state": {
+                    "class": "read",
+                    "constraints": {"entity_id": {"matches": "sensor\\.[a-z]+"}},
+                }
+            },
+        }
+    )
+    def allow(v: str) -> str:
+        return outcome(gate.evaluate("agent", "home", "get_state", {"entity_id": v}))
+
+    assert allow("sensor.temp") == "allow"
+    assert allow("sensor.temp; rm -rf") == "deny"  # trailing junk
+    assert allow("xsensor.temp") == "deny"  # leading junk
+    assert allow("sensor.temp\nlock.front") == "deny"  # newline injection
+
+
 def test_matches_constraint_rejects_a_non_string(gate: Gate) -> None:
     # A model can emit any JSON. A regex check against an int must deny, not raise.
     assert outcome(gate.evaluate("agent", "home", "get_state", {"entity_id": 42})) == "deny"
@@ -156,6 +182,25 @@ def test_principal_deny_matches_an_exact_name_too(gate: Gate) -> None:
     assert outcome(gate.evaluate("scheduler", "home", "light_turn_off", args)) == "deny"
 
 
+def test_star_wrapped_deny_glob_matches_bare_verb_tools(make_gate) -> None:
+    # fnmatch has no substring match, so "*.unlock_*" catches "ha.unlock_front"
+    # but never a tool named plainly "unlock". The scaffolded and documented form
+    # is "*unlock*", which must catch both, or the scheduler's "no locks" rule is
+    # silently inert.
+    gate = make_gate(
+        {
+            "default": "deny",
+            "principals": {"scheduler": {"confirm": [], "deny": ["*unlock*", "*delete*"]}},
+            "rules": {
+                "ha.unlock": {"class": "write", "constraints": {"door": {"max_len": 20}}},
+                "notes.delete": {"class": "write", "constraints": {"id": {"max_len": 20}}},
+            },
+        }
+    )
+    assert outcome(gate.evaluate("scheduler", "ha", "unlock", {"door": "front"})) == "deny"
+    assert outcome(gate.evaluate("scheduler", "notes", "delete", {"id": "1"})) == "deny"
+
+
 def test_an_unknown_principal_gets_no_privileges_but_no_exemptions(gate: Gate) -> None:
     # No principal entry means no confirm list and no deny list: the rules alone
     # decide, and the default deny still applies.
@@ -175,6 +220,32 @@ def test_destructive_requires_confirmation_for_the_agent(gate: Gate) -> None:
 def test_confirmation_is_per_principal(gate: Gate) -> None:
     # The person at the console confirmed by being there; the agent did not.
     assert outcome(gate.evaluate("user", "home", "lock_unlock", {"entity_id": "lock.front"})) == "allow"
+
+
+def test_destructive_rule_without_agent_confirmation_is_refused_at_load() -> None:
+    # Fail closed: a `destructive` rule the agent can reach without confirming is
+    # a gate that does nothing, so the config must not load rather than run open.
+    from pydantic import ValidationError
+
+    base = {
+        "default": "deny",
+        "rules": {"home.lock_unlock": {"class": "destructive"}},
+    }
+    # No principals at all: the agent falls straight through to allow.
+    with pytest.raises(ValidationError, match="destructive"):
+        PolicyConfig.model_validate(base)
+    # An agent principal that does not confirm destructive.
+    with pytest.raises(ValidationError, match="without confirmation"):
+        PolicyConfig.model_validate(
+            {**base, "principals": {"agent": {"confirm": ["write"], "deny": []}}}
+        )
+    # Confirming, or denying the tool for the agent, both load.
+    PolicyConfig.model_validate(
+        {**base, "principals": {"agent": {"confirm": ["destructive"], "deny": []}}}
+    )
+    PolicyConfig.model_validate(
+        {**base, "principals": {"agent": {"confirm": [], "deny": ["*unlock*"]}}}
+    )
 
 
 def test_a_bad_argument_is_denied_before_confirmation_is_offered(gate: Gate) -> None:

@@ -17,7 +17,7 @@ This document states what is enforced, what is merely helpful, and what is not d
 ## The gate is the only real boundary
 
 Every tool call passes through one function: the module API, with the policy gate in front of it. The
-agent, the scheduler, the confirmation flow and the development endpoint all use that path. There is no
+agent, the scheduler and the confirmation flow all use that path. There is no
 second way to reach a module, because a second way would mean there is no boundary, only a habit.
 
 The gate is default deny. A tool with no rule is refused. It evaluates:
@@ -78,7 +78,8 @@ important detail of the gate and the one most likely to be described as inconven
 step that could rewrite them.
 
 The available constraints are `in`, `matches`, `range` and `max_len`, and they compose. `matches` is a
-search, not a full match, so anchor patterns with `^` and `$` when you mean the whole value. Patterns
+full match (re.fullmatch): the pattern must describe the whole value, so `light\.[a-z_]+` allows
+`light.kitchen` but not `xlight.kitchen` or a trailing anything, and you do not need `^`/`$`. Patterns
 are compiled when the config loads, so a broken regex stops startup instead of failing open or failing
 late.
 
@@ -94,7 +95,7 @@ with a principal, which declares which classes it must have confirmed:
 ```yaml
 principals:
   agent:     { confirm: [destructive] }
-  scheduler: { confirm: [], deny: ["*.lock_*", "*.unlock_*", "*.delete_*"] }
+  scheduler: { confirm: [], deny: ["*lock*", "*unlock*", "*delete*"] }
 ```
 
 When the agent proposes a destructive call, the gate does not run it. It:
@@ -119,7 +120,7 @@ Three rules follow from this and are worth being explicit about:
 
 ## Principals
 
-A principal is a role, not a person: `agent`, `scheduler`, `dev` (the development endpoint), and the
+A principal is a role, not a person: `agent`, `scheduler`, and the
 subject that confirms a pending call. They exist because the same tool carries different risk depending
 on who is calling.
 
@@ -138,8 +139,10 @@ A module is a separate process speaking MCP over a pipe. The hub enforces:
 * **argv, never a shell.** Commands are argument lists. There is no shell, no interpolation, no word
   splitting, and nothing for a crafted value to escape into.
 * **A minimal environment.** A module receives only the variables its manifest declares, plus `PATH`,
-  `HOME` and `LANG`. The hub's environment is not passed through, so one module's token is not readable
-  by another.
+  `HOME` and `LANG`. The hub's environment is not passed through. Each declared key is resolved per
+  module first as `VAHUB_MOD_<NAME>_<KEY>`, so a secret provided that way reaches only its own module
+  even if another module names the same key; a bare `<KEY>` still works but is shared across any module
+  that declares it, and the supervisor logs when one is used.
 * **Privilege drop where possible.** If the manifest names a `user` and the hub runs as root, the child
   drops privileges before exec with `initgroups`, `setgid`, then `setuid`, in that order. Clearing
   supplementary groups first matters: without `initgroups`, the child keeps every group root belonged

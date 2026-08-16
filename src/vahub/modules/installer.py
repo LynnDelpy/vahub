@@ -398,12 +398,17 @@ class Installer:
                 what="git checkout",
             )
 
-        if _SHA_RE.match(source.rev):
-            head = self._run(["git", "-C", str(clone), "rev-parse", "HEAD"], what="git rev-parse")
-            if head.stdout.strip() != source.rev:
-                raise InstallError(
-                    f"checked out {head.stdout.strip()} but the source pins {source.rev}"
-                )
+        # Always resolve and report the commit that was actually checked out. A
+        # git tag is not immutable: it can be moved to point at different code
+        # after it was first reviewed. Recording the sha turns "installed the
+        # tag" into "installed this exact commit", which is what a later audit or
+        # a reinstall needs to detect drift. When the rev is itself a full sha,
+        # the resolved HEAD must equal it.
+        head = self._run(["git", "-C", str(clone), "rev-parse", "HEAD"], what="git rev-parse")
+        resolved_commit = head.stdout.strip()
+        self._say(f"resolved {source.rev} to commit {resolved_commit}")
+        if _SHA_RE.match(source.rev) and resolved_commit != source.rev:
+            raise InstallError(f"checked out {resolved_commit} but the source pins {source.rev}")
 
         root = clone if not source.subdir else clone / source.subdir
         resolved = root.resolve()

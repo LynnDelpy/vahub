@@ -538,13 +538,15 @@ def _starter_policy(modules: dict[str, Manifest]) -> dict[str, Any]:
     return {
         "default": "deny",
         "confirm_ttl_s": 60.0,
-        # The three principals that actually act: the agent, the scheduler and
-        # the development endpoint. A principal can only subtract or escalate,
-        # so listing one that never appears would be decoration.
+        # The two principals that act: the agent (untrusted model output, so it
+        # confirms anything that changes the world) and the scheduler (runs
+        # unattended, so it cannot touch locks or deletions at all). The deny
+        # globs are fnmatch over "module.tool" and are wrapped in stars because
+        # fnmatch has no substring match: "*unlock*" catches "ha.unlock", where
+        # "*.unlock_*" would catch nothing of the kind.
         "principals": {
             "agent": {"confirm": ["write", "destructive"], "deny": []},
-            "scheduler": {"confirm": ["destructive"], "deny": ["*.lock_*", "*.unlock_*", "*.delete_*"]},
-            "dev": {"confirm": ["destructive"], "deny": []},
+            "scheduler": {"confirm": ["destructive"], "deny": ["*lock*", "*unlock*", "*delete*"]},
         },
         "rules": rules,
     }
@@ -641,7 +643,7 @@ def _render_config(
         "#   homeassistant.light_turn_on:\n"
         "#     class: write\n"
         "#     constraints:\n"
-        '#       entity_id: { matches: "^light\\\\.", max_len: 64 }\n'
+        '#       entity_id: { matches: "light\\\\.[a-z0-9_]+", max_len: 64 }\n'
         "#       brightness_pct: { range: [1, 100] }\n"
         + _block("policy", policy),
         "# Deterministic routines. They run through the gate as principal=scheduler,\n"

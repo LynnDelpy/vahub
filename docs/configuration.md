@@ -219,7 +219,7 @@ policy:
 
   principals:
     agent:     { confirm: [destructive], deny: [] }
-    scheduler: { confirm: [], deny: ["*.lock_*", "*.unlock_*", "*.delete_*"] }
+    scheduler: { confirm: [], deny: ["*lock*", "*unlock*", "*delete*"] }
     user:      { confirm: [], deny: [] }
 
   rules:
@@ -244,7 +244,7 @@ policy:
 |---|---|---|
 | `default` | `deny` | `allow` with no rules is rejected at load: it would hand the model unrestricted control |
 | `confirm_ttl_s` | `60` | How long a pending destructive confirmation stays valid |
-| `principals` | empty | Who is acting. Known principals are `agent`, `scheduler`, `dev` (the development endpoint), and the subject that confirms a pending call. An unlisted principal gets the empty default: no confirmations required, nothing denied by name, and still subject to `default: deny` |
+| `principals` | empty | Who is acting. Known principals are `agent`, `scheduler`, and the subject that confirms a pending call. An unlisted principal gets the empty default: no confirmations required, nothing denied by name, and still subject to `default: deny` |
 | `rules` | empty | Keyed by `module.tool` |
 
 A principal has two lists. `confirm` names tool classes that require out-of-band confirmation before
@@ -257,7 +257,7 @@ argument. Constraint types:
 | Constraint | Meaning |
 |---|---|
 | `in: [...]` | The value must be one of these |
-| `matches: "regex"` | The value must be a string, and the pattern must be found in it. Anchor it with `^` and `$` when you mean the whole value |
+| `matches: "regex"` | The value must be a string, and the pattern must match the WHOLE value (re.fullmatch). `light\.[a-z_]+` allows `light.kitchen` but not `light.kitchen extra` or `xlight.kitchen`; you do not need `^`/`$` |
 | `range: [min, max]` | Numeric, inclusive |
 | `max_len: n` | Length of the value as text |
 
@@ -357,7 +357,7 @@ policy:
   confirm_ttl_s: 60
   principals:
     agent:     { confirm: [destructive] }
-    scheduler: { deny: ["*.lock_*", "*.unlock_*"] }
+    scheduler: { deny: ["*lock*", "*unlock*"] }
   rules:
     time.get_current_time:
       class: read
@@ -366,7 +366,7 @@ policy:
     homeassistant.get_state:
       class: read
       constraints:
-        entity_id: { matches: "^(light|sensor|lock)\\.", max_len: 64 }
+        entity_id: { matches: "(light|sensor|lock)\\.[a-z0-9_]+", max_len: 64 }
     homeassistant.light_turn_on:
       class: write
       constraints:

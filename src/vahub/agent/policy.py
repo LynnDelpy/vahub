@@ -161,7 +161,12 @@ class Gate:
             if not isinstance(value, str):
                 return f"value {value!r} must be a string matching {constraint.matches!r}"
             pattern = self._patterns.get((key, name)) or re.compile(constraint.matches)
-            if pattern.search(value) is None:
+            # fullmatch, not search: a rule is a whitelist, so it must describe
+            # the WHOLE value. With search, `matches: "admin"` would also permit
+            # "superadmin", and `matches: "^light\\."` would permit anything at
+            # all after the dot, including an embedded newline. Requiring the
+            # pattern to span the value is what operators already assume it does.
+            if pattern.fullmatch(value) is None:
                 return f"value {value!r} does not match {constraint.matches!r}"
 
         if constraint.range is not None:

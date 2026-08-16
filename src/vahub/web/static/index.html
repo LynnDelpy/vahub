@@ -6,7 +6,7 @@
 <meta name="color-scheme" content="light dark" />
 <meta name="referrer" content="no-referrer" />
 <title>Assistant</title>
-<style>
+<style nonce="__CSP_NONCE__">
   /*
    * This page is the assistant, not an operator console. It shows what someone
    * asked, what came back, and anything waiting for their approval. Module
@@ -75,6 +75,8 @@
   }
   .approval p { margin: 0 0 .7rem; }
   .approval .what { font-weight: 600; }
+  .approval .args { margin: 0 0 .7rem; padding: .5rem .7rem; list-style: none; border: 1px solid var(--line); border-radius: 8px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .82rem; }
+  .approval .args li { overflow-wrap: anywhere; }
   .approval .row { display: flex; gap: .5rem; flex-wrap: wrap; }
   .approval button { font: inherit; padding: .45rem .9rem; border-radius: 9px; border: 1px solid transparent; cursor: pointer; }
   .approval .yes { background: var(--danger); color: #fff; }
@@ -130,7 +132,7 @@
     </div>
   </footer>
 
-<script>
+<script nonce="__CSP_NONCE__">
 (function () {
   "use strict";
 
@@ -188,6 +190,20 @@
     return p.reason ? what + " (" + p.reason + ")" : what;
   }
 
+  // The exact arguments that will run, so a person approves what they can see
+  // rather than a bare tool name. These are the frozen values that already
+  // passed the gate; inserted as text, never as markup.
+  function argLines(p) {
+    const args = p && p.args;
+    if (!args || typeof args !== "object") return [];
+    return Object.keys(args).map(function (k) {
+      let v = args[k];
+      if (typeof v !== "string") v = JSON.stringify(v);
+      if (v.length > 200) v = v.slice(0, 200) + "…";
+      return k + ": " + v;
+    });
+  }
+
   function showApproval(p) {
     const id = p.pending_id || p.id;
     if (!id || shown.has(id)) return;
@@ -205,6 +221,21 @@
     what.textContent = describe(p);
     line.append(lead, what);
 
+    const rows = argLines(p);
+    if (rows.length) {
+      const args = document.createElement("ul");
+      args.className = "args";
+      rows.forEach(function (text) {
+        const li = document.createElement("li");
+        li.textContent = text;
+        args.appendChild(li);
+      });
+      card.appendChild(line);
+      card.appendChild(args);
+    } else {
+      card.appendChild(line);
+    }
+
     const row = document.createElement("div");
     row.className = "row";
     const yes = document.createElement("button");
@@ -215,7 +246,7 @@
     expiry.className = "expiry";
 
     row.append(yes, no, expiry);
-    card.append(line, row);
+    card.appendChild(row);
     thread.appendChild(card);
     scroll(true);
 

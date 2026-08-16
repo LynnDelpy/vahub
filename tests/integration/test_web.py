@@ -91,10 +91,33 @@ async def test_metrics_are_exposed_in_prometheus_format(client) -> None:
     assert "# HELP" in response.text
 
 
-async def test_reads_do_not_require_an_origin(client) -> None:
-    # GET routes change nothing, so refusing them on Origin would only break
-    # legitimate scripts.
-    assert (await client.get("/api/pending", headers={"origin": HOSTILE_ORIGIN})).status_code == 200
+async def test_benign_reads_do_not_require_an_origin(client) -> None:
+    # A GET that changes nothing and leaks nothing stays lenient, so a plain
+    # script is not broken by the Origin rule.
+    assert (
+        await client.get("/api/client-config", headers={"origin": HOSTILE_ORIGIN})
+    ).status_code == 200
+
+
+async def test_pending_is_origin_checked(client) -> None:
+    # /api/pending lists pending_ids, each of which confirms a destructive
+    # action, so it is not a benign read: a cross-site page must not read it.
+    assert (
+        await client.get("/api/pending", headers={"origin": HOSTILE_ORIGIN})
+    ).status_code == 403
+    assert (
+        await client.get("/api/pending", headers={"origin": ALLOWED_ORIGIN})
+    ).status_code == 200
+
+
+async def test_an_oversized_body_is_refused(client) -> None:
+    # A chat message is capped at 8000 characters; a multi-megabyte POST is
+    # refused by its declared length before it is buffered into memory.
+    big = "x" * (128 * 1024)
+    response = await client.post(
+        "/api/chat", json={"message": big}, headers={"origin": ALLOWED_ORIGIN}
+    )
+    assert response.status_code == 413
 
 
 # --------------------------------------------------------------------------
@@ -192,6 +215,21 @@ async def test_the_console_page_is_served(client) -> None:
     response = await client.get("/")
     assert response.status_code == 200
     assert "text/html" in response.headers["content-type"]
+
+
+async def test_csp_nonce_is_bound_to_the_inline_tags(client) -> None:
+    # A guard for the class of bug where the page shipped with a nonce CSP but no
+    # nonce on its tags, so a real browser blocked its own script and style and
+    # the assistant did not work at all. The served nonce must appear on the
+    # inline <script> and <style>, and the placeholder must be gone.
+    response = await client.get("/")
+    html = response.text
+    assert "__CSP_NONCE__" not in html
+    match = re.search(r"script-src 'nonce-([^']+)'", response.headers["content-security-policy"])
+    assert match, response.headers["content-security-policy"]
+    nonce = match.group(1)
+    assert f'<script nonce="{nonce}">' in html
+    assert f'<style nonce="{nonce}">' in html
 
 
 async def test_the_console_never_renders_module_text_as_html(client) -> None:

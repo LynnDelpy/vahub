@@ -46,6 +46,12 @@ log = get_logger("supervisor")
 # Enough lines to explain why a module died, small enough to keep per module.
 STDERR_RING = 200
 
+
+def _env_scope(module_name: str) -> str:
+    """The per-module secret prefix, e.g. `VAHUB_MOD_HOMEASSISTANT_`. Module
+    names are `[a-z0-9-]`, so only the hyphen needs folding to an underscore."""
+    return "VAHUB_MOD_" + module_name.upper().replace("-", "_") + "_"
+
 # Cap on the backoff exponent: 2**6 is about a minute, which is long enough for
 # a transient failure to clear and short enough that a recovered module comes
 # back without an operator.
@@ -333,9 +339,18 @@ class Supervisor:
 
     # --- process environment ----------------------------------------------
     def _child_env(self, manifest: Manifest) -> dict[str, str]:
-        """Only the variables the manifest declares, plus the few a process
-        needs to run at all. No blanket os.environ passthrough: the clock module
-        has no business being able to read a Home Assistant token."""
+        """The variables the manifest declares, plus the few a process needs to
+        run at all. No blanket os.environ passthrough: the clock module has no
+        business reading a Home Assistant token.
+
+        A declared key is looked up first under a per-module name,
+        ``VAHUB_MOD_<NAME>_<KEY>``, and only then under the bare ``<KEY>``. The
+        scoped form is what keeps one module's secret out of another's reach: a
+        hostile manifest that lists ``HA_TOKEN`` gets ``VAHUB_MOD_<ITSELF>_HA_TOKEN``,
+        which the operator never set, not the value meant for the Home Assistant
+        module. The bare fallback stays for existing deployments, but it is a
+        shared value any module can name, so it is logged when used.
+        """
         env = {
             "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
             "HOME": os.environ.get("HOME", "/tmp"),
@@ -344,10 +359,25 @@ class Supervisor:
             # until the buffer happens to fill.
             "PYTHONUNBUFFERED": "1",
         }
+        scope = _env_scope(manifest.name)
         for key in (*manifest.config.required, *manifest.config.optional):
+            scoped = os.environ.get(scope + key)
+            if scoped is not None:
+                env[key] = scoped
+                continue
             value = os.environ.get(key)
             if value is not None:
                 env[key] = value
+                log.warning(
+                    "module_env_unscoped",
+                    module=manifest.name,
+                    key=key,
+                    detail=(
+                        f"{key} is read from the shared hub environment, so any installed "
+                        f"module that declares {key} receives it. Set {scope}{key} instead to "
+                        f"scope this secret to the {manifest.name!r} module."
+                    ),
+                )
         if manifest.runtime.pythonpath:  # only for modules installed from a checkout
             env["PYTHONPATH"] = manifest.runtime.pythonpath
         if manifest.runtime.user:

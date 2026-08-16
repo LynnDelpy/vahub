@@ -272,6 +272,29 @@ async def test_a_tool_result_is_truncated_before_it_re_enters_the_context(make_l
     assert "truncated" in content
 
 
+async def test_the_pending_id_is_hidden_from_the_model(make_loop, session) -> None:
+    # The pending_id confirms a destructive action. If the model could read it, a
+    # prompt injection with any HTTP-capable tool could POST it to /api/confirm
+    # and approve its own request. It goes to the human UI (the returned
+    # `pending`) and never into the model's context.
+    secret = "SECRET-TOKEN-123"
+    api = FakeModuleAPI(
+        results=[{"ok": False, "error": "confirmation_required", "pending_id": secret,
+                  "detail": "a human must confirm"}],
+    )
+    llm = ScriptedLLM(tool_call(sanitized("clock.now")), LLMResult(text="waiting for approval"))
+    result = await make_loop(llm, moduleapi=api).run_turn(session, "unlock the door")
+
+    # The human-facing path carries it.
+    assert result["pending"][0]["pending_id"] == secret
+    # No message the session keeps, and nothing the model was shown on the next
+    # call, contains it. The model still learns confirmation is required.
+    assert all(secret not in str(m.get("content", "")) for m in session.messages)
+    assert all(secret not in str(m) for shown in llm.seen for m in shown)
+    tool_msg = messages_of_role(session.messages, "tool")[-1]
+    assert "confirmation_required" in tool_msg["content"]
+
+
 async def test_a_small_tool_result_is_left_alone(make_loop, session) -> None:
     api = FakeModuleAPI(default={"ok": True, "result": "small"})
     llm = ScriptedLLM(tool_call(sanitized("clock.now")), LLMResult(text="ok"))

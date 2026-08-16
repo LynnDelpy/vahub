@@ -43,9 +43,14 @@ Two rules that matter:
 * The `tools` block is what the module *claims*. It is advisory. The gate in
   vahub.yaml decides what may actually be called; a module cannot grant itself
   permission by describing itself generously.
-* Only the variables named in `config` are passed to the process. A module
-  never sees the rest of the hub's environment, so a token belonging to one
-  module is not readable by another.
+* Only the variables named in `config` are passed to the process; a module
+  never sees the rest of the hub's environment. Each declared key is resolved
+  per module first, as `VAHUB_MOD_<NAME>_<KEY>`, so a secret provided that way
+  reaches only its own module even if another module's manifest names the same
+  key. A bare `<KEY>` in the hub environment still works but is shared: any
+  module that declares it receives it, and the supervisor logs when that
+  happens. Provide secrets in the scoped form to keep one module's token out of
+  another's reach.
 """
 
 from __future__ import annotations

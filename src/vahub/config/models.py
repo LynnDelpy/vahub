@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import os
 import re
+from fnmatch import fnmatch
 from pathlib import Path
 from typing import Any, Literal
 
@@ -142,6 +143,9 @@ class Constraint(Strict):
     entry is rejected: the gate never waves through what it was not told about."""
 
     in_: list[Any] | None = Field(None, alias="in")
+    # A regex the whole value must match (re.fullmatch, not search): the pattern
+    # describes the entire argument, so "light\\.[a-z_]+" allows "light.kitchen"
+    # but not "light.kitchen extra" or a leading/trailing anything.
     matches: str | None = None
     range: tuple[float, float] | None = None
     max_len: int | None = None
@@ -174,7 +178,11 @@ class Principal(Strict):
     touch locks, the agent must ask before anything destructive."""
 
     confirm: list[ToolClass] = Field(default_factory=list)
-    deny: list[str] = Field(default_factory=list)  # glob patterns, e.g. "*.lock_*"
+    # fnmatch globs over "module.tool". fnmatch has no substring shortcut, so a
+    # verb must be wrapped in stars to match bare names: "*unlock*" matches both
+    # "ha.unlock" and "door.unlock_front", where "*.unlock_*" matches neither of
+    # the first kind.
+    deny: list[str] = Field(default_factory=list)  # e.g. ["*unlock*", "*delete*"]
 
 
 class PolicyConfig(Strict):
@@ -190,6 +198,43 @@ class PolicyConfig(Strict):
             raise ValueError(
                 "policy.default=allow with no rules gives the model unrestricted "
                 "control; set default=deny and list what is permitted"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _destructive_must_be_confirmed(self) -> PolicyConfig:
+        """A `destructive` class is only meaningful if some principal confirms
+        it. The agent principal runs untrusted model output, so a destructive
+        tool it can reach without confirmation is a fail-open gate: the label
+        does nothing and a prompt injection unlocks the door with no human. This
+        refuses to load such a policy rather than run it silently.
+
+        The agent principal is the one the loop drives (it is named "agent"). A
+        principal that deliberately runs destructive actions directly, like a
+        human at the console, is not constrained here; only the agent is.
+        """
+        destructive = [key for key, rule in self.rules.items() if rule.cls == "destructive"]
+        if not destructive:
+            return self
+        agent = self.principals.get("agent")
+        if agent is None:
+            raise ValueError(
+                "policy has destructive rules "
+                f"({', '.join(sorted(destructive))}) but no 'agent' principal. The agent runs "
+                "untrusted model output and must be told to confirm destructive actions: add an "
+                "'agent' principal with `confirm: [destructive]`."
+            )
+        if "destructive" in agent.confirm:
+            return self
+        reachable = [
+            key for key in destructive if not any(fnmatch(key, pat) for pat in agent.deny)
+        ]
+        if reachable:
+            raise ValueError(
+                "the 'agent' principal can invoke destructive tools without confirmation "
+                f"({', '.join(sorted(reachable))}); add `destructive` to the agent's `confirm` "
+                "list, or deny those tools for the agent. A destructive tool that needs no human "
+                "is a `write`, not a `destructive`."
             )
         return self
 

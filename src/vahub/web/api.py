@@ -136,7 +136,11 @@ def build_router(rt: Runtime) -> APIRouter:
             return JSONResponse({"ok": False, "error": "empty_transcript"})
 
         session = rt.sessions.get_or_create(session_id)
-        result = _as_dict(await rt.agent.run_turn(session, transcript), "agent_error")
+        # A spoken turn runs under the voice wall-clock budget, which is tighter:
+        # a person waiting for an answer out loud gives up long before a reader.
+        result = _as_dict(
+            await rt.agent.run_turn(session, transcript, channel="voice"), "agent_error"
+        )
         rt.sessions.trim(session)
         payload: dict[str, Any] = {"transcript": transcript, **result}
 
@@ -150,7 +154,11 @@ def build_router(rt: Runtime) -> APIRouter:
         return JSONResponse(payload)
 
     @router.get("/pending")
-    async def pending() -> JSONResponse:
+    async def pending(request: Request) -> JSONResponse:
+        # Origin-checked like every other route. The list carries pending_ids,
+        # each of which confirms a destructive action, so a cross-site page must
+        # not be able to read it.
+        check_origin(request, rt.config)
         return JSONResponse(await rt.store.list_pending())
 
     @router.post("/confirm/{pending_id}")

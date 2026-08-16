@@ -185,7 +185,12 @@ class ModuleAPI:
         if mod is None or mod.state is not State.READY or mod.client is None:
             return {"ok": False, "error": "module_not_ready"}
 
-        await self._store.set_pending_status(pending_id, "confirmed")
+        # Claim the pending call atomically. Two concurrent confirmations of the
+        # same id both reach this point with status still 'pending'; only the one
+        # that wins the compare-and-set dispatches, so a single human approval
+        # cannot fire the frozen destructive call twice.
+        if not await self._store.consume_pending(pending_id):
+            return {"ok": False, "error": "not_pending", "detail": "already handled"}
         # The gate is not re-run here. These exact arguments already passed it;
         # re-evaluating them under the confirming human's principal would deny
         # the very flow the gate asked for.
@@ -276,6 +281,10 @@ class ModuleAPI:
                     "pending_id": pending_id,
                     "module": module,
                     "tool": tool,
+                    # The frozen arguments, so the person approving sees exactly
+                    # what will run. They already passed the gate (so they are
+                    # bounded by its constraints); the page inserts them as text.
+                    "args": args,
                     "principal": principal,
                     "reason": reason,
                     "ttl_s": self._confirm_ttl_s,

@@ -195,7 +195,7 @@ deny it anything that should never happen while nobody is watching:
 policy:
   principals:
     agent:     { confirm: [destructive] }
-    scheduler: { deny: ["*.lock_*", "*.unlock_*", "*.delete_*"] }
+    scheduler: { deny: ["*lock*", "*unlock*", "*delete*"] }
 ```
 
 **Stop a whole capability.** `vahub module remove NAME`, then restart. Nothing that module

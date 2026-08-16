@@ -164,36 +164,55 @@ class AgentLoop:
                 session.messages.append(_assistant_tool_message(result))
                 for call in result.tool_calls:
                     spec = by_name.get(call.name)
-                    budget_left = max(1.0, min(DEFAULT_TOOL_TIMEOUT_S, deadline - time.monotonic()))
-                    if spec is None:
+                    label = call.name if spec is None else f"{spec.module}.{spec.tool}"
+                    remaining = deadline - time.monotonic()
+                    outcome: dict[str, Any]
+                    if remaining <= 0:
+                        # The deadline passed inside this batch of calls. Every
+                        # tool_call still gets a paired response (a dangling one
+                        # would break the next turn's request), but nothing is
+                        # dispatched past the deadline. The outer loop stops the
+                        # turn on its next iteration.
+                        outcome = {
+                            "ok": False,
+                            "error": "wall_clock",
+                            "detail": "the turn deadline passed before this call ran",
+                        }
+                    elif spec is None:
                         # A hallucinated or since-hidden tool. Told as data, so the
                         # model can correct itself instead of retrying blindly.
-                        outcome: dict[str, Any] = {
+                        outcome = {
                             "ok": False,
                             "error": "unknown_tool",
                             "detail": f"{call.name} is not available to you",
                         }
-                        label = call.name
                     else:
                         outcome = await self._moduleapi.call(
                             module=spec.module,
                             tool=spec.tool,
                             args=call.arguments,
-                            timeout_s=budget_left,
+                            timeout_s=max(0.1, min(DEFAULT_TOOL_TIMEOUT_S, remaining)),
                             principal=who,
                         )
-                        label = f"{spec.module}.{spec.tool}"
                     if not isinstance(outcome, dict):  # a module API contract violation, not a crash
                         outcome = {"ok": False, "error": "bad_result", "detail": str(outcome)[:200]}
+                    model_view = outcome
                     if outcome.get("error") == "confirmation_required":
                         pending.append({"pending_id": outcome.get("pending_id"), "tool": label})
+                        # The model must never learn the pending_id. That id is
+                        # the capability that confirms a destructive action, and a
+                        # prompt-injected model with any HTTP-capable tool could
+                        # otherwise POST it to /api/confirm and approve its own
+                        # request. A human confirms out of band; the model is only
+                        # told that confirmation is pending.
+                        model_view = {k: v for k, v in outcome.items() if k != "pending_id"}
 
                     steps.append({"tool": label, "args": call.arguments, "result": outcome})
                     session.messages.append(
                         {
                             "role": "tool",
                             "tool_call_id": call.id,
-                            "content": self._truncate(json.dumps(outcome, default=str)),
+                            "content": self._truncate(json.dumps(model_view, default=str)),
                         }
                     )
 

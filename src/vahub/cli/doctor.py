@@ -13,7 +13,9 @@ combinations that expose an unauthenticated hub to a network.
 from __future__ import annotations
 
 import os
+from collections import defaultdict
 from dataclasses import dataclass
+from fnmatch import fnmatch
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -175,6 +177,27 @@ def _module_checks(config: Config) -> list[Check]:
             continue
         for level, message in findings:
             checks.append(Check("Modules", module.name, "fail" if level == "fail" else "warn", message))
+
+    # A config key declared by more than one module is a shared secret: provided
+    # as a bare environment variable, every one of those modules receives it. The
+    # per-module VAHUB_MOD_<name>_<KEY> form keeps them apart.
+    claimants: dict[str, list[str]] = defaultdict(list)
+    for module in modules:
+        manifest = module.manifest
+        if manifest is None:
+            continue
+        for key in (*manifest.config.required, *manifest.config.optional):
+            claimants[key].append(module.name)
+    for key, names in sorted(claimants.items()):
+        if len(names) > 1:
+            checks.append(
+                Check(
+                    "Modules", f"shared secret {key}", "warn",
+                    ", ".join(sorted(names)),
+                    f"a bare {key} reaches all of these; scope it per module with "
+                    f"VAHUB_MOD_<name>_{key}",
+                )
+            )
     return checks
 
 
@@ -217,17 +240,24 @@ def _policy_checks(config: Config) -> list[Check]:
         key for key, rule in policy.rules.items() if rule.cls == "destructive"
     )
     if destructive:
-        unconfirmed = sorted(
-            name for name, principal in policy.principals.items()
-            if "destructive" not in principal.confirm
-        )
+        # Only the agent principal matters here: it runs untrusted model output,
+        # so a destructive tool it can reach without confirming is the fail-open
+        # case (the config loader now refuses to start on it, so a loaded config
+        # should always be ok). A human-at-the-console principal that runs
+        # destructive actions directly is not a finding.
+        agent = policy.principals.get("agent")
+        reachable: list[str] = []
+        if agent is not None and "destructive" not in agent.confirm:
+            reachable = sorted(
+                key for key in destructive if not any(fnmatch(key, pat) for pat in agent.deny)
+            )
         checks.append(
             Check(
                 "Policy", "destructive tools",
-                "ok" if not unconfirmed else "warn",
+                "ok" if not reachable else "warn",
                 ", ".join(destructive),
-                "" if not unconfirmed
-                else f"principals {', '.join(unconfirmed)} may call them without confirmation",
+                "" if not reachable
+                else f"the agent may call {', '.join(reachable)} without confirmation",
             )
         )
 

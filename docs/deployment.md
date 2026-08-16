@@ -489,7 +489,7 @@ Configuration:
 * [ ] Destructive tools are classed `destructive` and the `agent` principal has
       `confirm: [destructive]`.
 * [ ] The `scheduler` principal denies anything that should never run unattended
-      (`"*.lock_*"`, `"*.unlock_*"`, `"*.delete_*"`).
+      (`"*lock*"`, `"*unlock*"`, `"*delete*"`).
 * [ ] `budgets.tokens_per_day` is set. It bounds both cost and a runaway loop.
 * [ ] `vahub.yaml` contains no secret values, only `${...}` references.
 

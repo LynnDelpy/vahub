@@ -45,33 +45,32 @@ def _normalise(origin: str) -> str:
     return origin.strip().rstrip("/").casefold()
 
 
-def _self_origins(host_header: str | None) -> set[str]:
-    """The origins that name this server. Both schemes are accepted because a
-    TLS-terminating proxy leaves the hub seeing plain http while the browser
-    reports https."""
-    if not host_header:
-        return set()
-    host = _normalise(host_header)
-    return {f"http://{host}", f"https://{host}"}
+def origin_allowed(origin: str | None, allowlist: Iterable[str]) -> bool:
+    """Whether a browser Origin may call the hub.
 
-
-def origin_allowed(origin: str | None, allowlist: Iterable[str], host_header: str | None = None) -> bool:
+    The allowlist is the whole rule. An earlier version also trusted any Origin
+    equal to the request's own Host header, to save the operator from listing
+    their address; that is a DNS-rebinding hole, because a page the victim visits
+    can rebind its own hostname to the hub's address and then present a matching
+    Origin and Host. So the Origin must be in the configured allowlist and
+    nowhere else. The loopback default and the proxy deployment both already list
+    the address the browser actually uses.
+    """
     if origin is None:
+        # No Origin header is not a cross-site browser call: fetch and form
+        # POSTs both send one. It is a non-browser client (curl, a script, a
+        # health probe), which this rule was never meant to stop and which has
+        # no ambient browser credentials to abuse.
         return True
     allow = {_normalise(a) for a in allowlist}
     if "*" in allow:
         return True
-    candidate = _normalise(origin)
-    return candidate in allow or candidate in _self_origins(host_header)
+    return _normalise(origin) in allow
 
 
 def check_origin(request: Request, config: Config) -> None:
     """Raise 403 when a browser presents an Origin that is not permitted."""
-    if not origin_allowed(
-        request.headers.get("origin"),
-        config.web.origin_allowlist,
-        request.headers.get("host"),
-    ):
+    if not origin_allowed(request.headers.get("origin"), config.web.origin_allowlist):
         raise HTTPException(status_code=403, detail="origin not allowed")
 
 
@@ -79,11 +78,7 @@ def websocket_origin_allowed(websocket: WebSocket, config: Config) -> bool:
     """Same rule as the REST routes. A WebSocket handshake is a plain GET that
     no browser policy restricts, so this is the only check standing in the way
     of a cross-site page reading the event stream."""
-    return origin_allowed(
-        websocket.headers.get("origin"),
-        config.web.origin_allowlist,
-        websocket.headers.get("host"),
-    )
+    return origin_allowed(websocket.headers.get("origin"), config.web.origin_allowlist)
 
 
 def auth_subject(request: Request, config: Config) -> str | None:

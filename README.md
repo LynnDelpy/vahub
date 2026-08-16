@@ -82,7 +82,7 @@ vahub module list
 ```
 
 A module only ever sees the environment variables its manifest declares, so a token belonging to one
-module is not readable by another. Record them at install time with `--set`, or put them in the
+module is scoped to it. Record them at install time with `--set`, or put them in the
 environment the hub itself runs in (an `EnvironmentFile` in the systemd unit, or an export in your shell
 for a first run):
 
@@ -171,7 +171,7 @@ policy:
 
   principals:
     agent:     { confirm: [destructive] }
-    scheduler: { confirm: [], deny: ["*.lock_*", "*.unlock_*"] }
+    scheduler: { confirm: [], deny: ["*lock*", "*unlock*"] }
 
   rules:
     homeassistant.light_turn_on:
@@ -204,7 +204,7 @@ Rules also shape what the model sees. A tool with no rule for the acting princip
 catalog entirely, so the model does not plan calls that would only die at the gate.
 
 The gate is checked in one place, on the path that the agent, the scheduler, the confirmation flow and
-the development endpoint all share. It is not advice in a prompt, and it is not something a module can
+a confirmed destructive action all share. It is not advice in a prompt, and it is not something a module can
 grant itself: a manifest declares what a module offers, `vahub.yaml` decides what may be called.
 
 ## Modules
@@ -212,7 +212,7 @@ grant itself: a manifest declares what a module offers, `vahub.yaml` decides wha
 A module is a separate program that speaks MCP over stdin and stdout. The hub spawns it, talks to it
 over a pipe, and can kill it. It is never imported, so a module can be written by someone else, in any
 language, and still be safe to run and easy to reason about. Each one gets only the environment
-variables its manifest names, so a token belonging to one module is not readable by another.
+variables its manifest names, resolved per module as VAHUB_MOD_<name>_<KEY> so a secret given that way is not readable by another.
 
 * Catalog: <https://github.com/LynnDelpy/vahub-modules>
 * Writing your own: [docs/writing-modules.md](docs/writing-modules.md)

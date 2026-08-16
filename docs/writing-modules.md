@@ -442,7 +442,7 @@ tempting: one tool, whole API covered. Do not write it.
 
 The policy gate authorizes a call by inspecting its arguments. With a narrow
 `light_turn_on(entity_id, brightness_pct)` the operator writes
-`entity_id: { matches: "^light\\." }` and the assistant genuinely cannot touch a lock. With
+`entity_id: { matches: "light\\.[a-z_]+" }` and the assistant genuinely cannot touch a lock. With
 a generic passthrough the operator can only allow or forbid the entire API, because the
 meaning of the call now lives inside a free form `data` blob the gate cannot reason about.
 The gate becomes decoration and the module's backend token, which is usually admin or

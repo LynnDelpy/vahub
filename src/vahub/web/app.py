@@ -28,12 +28,16 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response
 from ..__about__ import __version__
 from ..core import metrics
 from . import api, ws
+from .security import check_origin
 
 if TYPE_CHECKING:
     from ..core.runtime import Runtime
 
 STATIC_DIR = Path(__file__).parent / "static"
 INDEX_FILE = STATIC_DIR / "index.html"
+# A chat turn's message is capped at 8000 characters, so a JSON body far under
+# this is normal; anything larger is refused before it is buffered.
+MAX_JSON_BODY = 64 * 1024
 NONCE_PLACEHOLDER = "__CSP_NONCE__"
 
 # Applied to every response. The assistant page overrides Content-Security-Policy
@@ -76,6 +80,22 @@ def create_app(rt: Runtime) -> FastAPI:
             response.headers.setdefault(header, value)
         return response
 
+    @app.middleware("http")
+    async def limit_body_size(request: Request, call_next):
+        # Reject an oversized body by its declared length before it is buffered.
+        # /api/voice carries audio and enforces its own, larger cap in the
+        # handler; every other route is small JSON, so a multi-megabyte POST to
+        # /api/chat is refused here rather than read into memory first.
+        declared = request.headers.get("content-length")
+        if (
+            declared is not None
+            and declared.isdigit()
+            and request.url.path != "/api/voice"
+            and int(declared) > MAX_JSON_BODY
+        ):
+            return JSONResponse({"ok": False, "error": "request_too_large"}, status_code=413)
+        return await call_next(request)
+
     @app.get("/health")
     async def health() -> JSONResponse:
         return JSONResponse({"status": "ok", "version": __version__})
@@ -97,7 +117,12 @@ def create_app(rt: Runtime) -> FastAPI:
         return JSONResponse({"ready": settled}, status_code=200 if settled else 503)
 
     @app.get("/metrics")
-    async def prometheus() -> Response:
+    async def prometheus(request: Request) -> Response:
+        # Module names, tool names and policy-decision counts are operator
+        # information, the same kind /ready withholds. Origin-check it like the
+        # API so a browser page cannot read it cross-site; a scraper sends no
+        # Origin and still works, and the proxy 404s it for client-cert users.
+        check_origin(request, rt.config)
         body, content_type = metrics.render()
         return Response(content=body, media_type=content_type)
 

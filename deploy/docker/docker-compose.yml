@@ -110,7 +110,14 @@ services:
       VAHUB_DOMAIN: ${VAHUB_DOMAIN:-localhost}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - ./certs:/certs:ro
+      # Only the three files the proxy needs: the server certificate and key it
+      # serves, and the CA certificate (public) it verifies client certs against.
+      # The CA PRIVATE key (ca.key) and the client material are deliberately not
+      # mounted, so a compromise of this internet-facing container cannot mint
+      # new client certificates. Mounting the whole ./certs directory would.
+      - ./certs/server.crt:/certs/server.crt:ro
+      - ./certs/server.key:/certs/server.key:ro
+      - ./certs/ca.crt:/certs/ca.crt:ro
       - caddy-data:/data
       - caddy-config:/config
     restart: unless-stopped

@@ -4,7 +4,7 @@ This document describes what the hub is made of, why each piece exists as its ow
 happens along the three paths that matter: a spoken command, a scheduled routine, and a status update.
 
 The organising idea is that there is exactly one place where an action becomes real, and everything
-funnels through it. The agent, the scheduler, the confirmation flow and the development endpoint all
+funnels through it. The agent, the scheduler and the confirmation flow all
 call the same module API, and the policy gate sits in front of it. If that were not true, the gate would
 be one boundary among several, which is another way of saying there would be no boundary.
 

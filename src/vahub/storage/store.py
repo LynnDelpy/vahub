@@ -20,13 +20,23 @@ history, and only an ordered, recorded migration does that.
 
 from __future__ import annotations
 
+import contextlib
 import json
+import os
 import time
 from pathlib import Path
 from types import TracebackType
 from typing import Any
 
 import aiosqlite
+
+
+def _chmod_quiet(path: Path, mode: int) -> None:
+    """Best effort chmod. A missing file (a WAL sidecar not yet created) or a
+    filesystem that does not carry Unix modes must not stop the hub starting."""
+    with contextlib.suppress(OSError):
+        os.chmod(path, mode)
+
 
 # --------------------------------------------------------------------------
 # migrations
@@ -126,11 +136,20 @@ class Store:
     async def open(self) -> None:
         if self._db is not None:
             return
-        self._path.parent.mkdir(parents=True, exist_ok=True)
+        # The database holds conversations, tool arguments (which can carry
+        # secrets) and the audit log. None of it should be readable by other
+        # users on the host, so the directory is private before the file is
+        # created and the file itself is tightened once SQLite has made it.
+        self._path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        _chmod_quiet(self._path.parent, 0o700)
         db = await aiosqlite.connect(self._path, isolation_level=None)
         db.row_factory = aiosqlite.Row
         # WAL lets a reader (`vahub audit`, a backup) run while a writer works.
         await db.execute("PRAGMA journal_mode=WAL")
+        # 0600 on the database and its WAL/SHM sidecars. WAL mode creates the
+        # sidecars lazily, so re-tighten them after the first write below as well.
+        for suffix in ("", "-wal", "-shm"):
+            _chmod_quiet(Path(str(self._path) + suffix), 0o600)
         await db.execute("PRAGMA synchronous=NORMAL")
         await db.execute("PRAGMA foreign_keys=ON")
         # Rather than surfacing "database is locked" the moment a VACUUM INTO
@@ -138,6 +157,10 @@ class Store:
         await db.execute("PRAGMA busy_timeout=5000")
         self._db = db
         await self._migrate()
+        # The migration wrote, so the WAL/SHM sidecars now exist. Tighten them
+        # once more; the earlier pass ran before they were created.
+        for suffix in ("-wal", "-shm"):
+            _chmod_quiet(Path(str(self._path) + suffix), 0o600)
 
     async def close(self) -> None:
         if self._db is not None:
@@ -269,15 +292,42 @@ class Store:
     async def set_pending_status(self, pid: str, status: str) -> None:
         await self.db.execute("UPDATE pending_calls SET status=? WHERE id=?", (status, pid))
 
-    async def list_pending(self) -> list[dict[str, Any]]:
-        """Only confirmations that can still be acted on. The args column is not
-        selected: this feeds a UI, and the caller does not need the payload."""
+    async def consume_pending(self, pid: str) -> bool:
+        """Atomically move one pending call to 'confirmed'. Returns True only for
+        the caller that actually made the transition.
+
+        A confirmation must fire the frozen call exactly once. Two requests for
+        the same id would otherwise both read 'pending', both dispatch, and a
+        single human approval would unlock the door twice. The guard is the
+        `AND status='pending'` clause: only one UPDATE changes a row, so only one
+        caller sees rowcount == 1.
+        """
         cur = await self.db.execute(
-            "SELECT id, ts, expires_at, principal, module, tool, status FROM pending_calls"
+            "UPDATE pending_calls SET status='confirmed' WHERE id=? AND status='pending'",
+            (pid,),
+        )
+        return bool(cur.rowcount and cur.rowcount == 1)
+
+    async def list_pending(self) -> list[dict[str, Any]]:
+        """Confirmations that can still be acted on, including their frozen
+        arguments so the approval card can show what will actually run (the same
+        values the live confirmation event carries). This feeds the assistant
+        page only, which is already origin-checked because these ids confirm a
+        destructive action."""
+        cur = await self.db.execute(
+            "SELECT id, ts, expires_at, principal, module, tool, status, args FROM pending_calls"
             " WHERE status='pending' AND expires_at > ? ORDER BY ts DESC",
             (time.time(),),
         )
-        return [dict(row) for row in await cur.fetchall()]
+        rows: list[dict[str, Any]] = []
+        for row in await cur.fetchall():
+            item = dict(row)
+            try:
+                item["args"] = json.loads(item.get("args") or "{}")
+            except ValueError:
+                item["args"] = {}
+            rows.append(item)
+        return rows
 
     async def expire_pending(self) -> int:
         """Mark timed-out confirmations expired. Without this they stay 'pending'

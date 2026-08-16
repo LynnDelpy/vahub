@@ -11,6 +11,36 @@ registry entry is listed under Changed with what an operator has to do.
 
 ## [Unreleased]
 
+### Added
+
+* **Built-in accounts and login.** The hub can require its own sign in instead of
+  relying only on a reverse proxy. Named accounts (scrypt-hashed passwords,
+  revocable DB sessions in an HttpOnly SameSite=Strict cookie) are managed with
+  `vahub user add/list/passwd/disable/enable/remove`; the hub never sets a
+  password itself. `web.auth.enabled` defaults on, so a browser-reachable hub is
+  not open. The audit log records which account confirmed an action.
+* **Saved data the owner and the assistant can edit.** Locations (home, work),
+  key/value preferences, and a memory the assistant can write to, all in the
+  database. A built-in `core` module offers gated tools (set_location, remember,
+  create_schedule, ...) so the agent can manage them through the same policy gate
+  as any module; a signed-in owner edits the same data through origin-checked
+  REST routes and the web UI. Policy rules and accounts stay file/CLI-only.
+* **Runtime-editable schedules.** Cron routines can be created and removed at
+  runtime (by the UI or the assistant) and are persisted. They still run as
+  principal `scheduler`, so they are bounded by the scheduler's policy at run
+  time regardless of who created them. File schedules stay read-only.
+* **A real web UI.** Tabs for the assistant, Locations, Settings and Schedules,
+  behind the login. Still rendered without `innerHTML`; the CSP nonce is bound to
+  the inline tags.
+* **New modules** (in vahub-modules): `weather` (Open-Meteo, no key) and
+  `calculator` (safe arithmetic, no eval, no network).
+
+### Changed
+
+* Store schema v2 (accounts, sessions, preferences, locations, runtime
+  schedules). Existing databases migrate on start.
+* The reverse proxy no longer 404s `/api/schedules`, now a signed-in route.
+
 ## [0.1.0] - 2026-08-12
 
 First release.

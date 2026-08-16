@@ -200,20 +200,24 @@ shows what happened.
 
 ## The web surface
 
-The hub has no authentication. That is a deliberate scope decision, not an oversight: authentication
-done badly is worse than authentication delegated to software that does it for a living.
+The hub authenticates with a built-in login or a reverse proxy. `web.auth.enabled` is on by default: a
+named account (created with `vahub user add`, scrypt-hashed password, a revocable database session in an
+HttpOnly SameSite=Strict cookie) is required to reach anything but the page shell, the health probes and
+the login itself. Turn it off only when a proxy in front already authenticates; the hub never invents a
+credential for you. Whoever confirms an action is recorded in the audit log by account.
 
-What the hub does do:
+What the hub does either way:
 
 * Binds to `127.0.0.1` by default.
 * Checks an `Origin` allowlist on state-changing routes and on the event WebSocket. Same-origin does not
   prevent another page from sending a cross-origin POST, and it does not apply to WebSockets at all. A
   request with no `Origin` (a script, curl) is allowed, which is why the bind address matters.
-* Exposes only the assistant on the web: asking something, speaking something, and approving a
-  destructive action that was held back for a person. Module states, module stderr, the audit log and
-  direct tool invocation are not reachable over HTTP at all. They are read with the CLI on the host
-  (`vahub audit`, `vahub doctor`, `vahub module verify`), which needs the same access that changing the
-  policy needs anyway.
+* Exposes the assistant and a signed-in owner's own settings (saved places, preferences, schedules), and
+  nothing operator-facing: module states, module stderr, the audit log and direct tool invocation are
+  not reachable over HTTP at all. They are read with the CLI on the host (`vahub audit`, `vahub doctor`,
+  `vahub module verify`). The owner's own settings and the assistant's `core.*` tools edit saved data
+  only; the policy and the accounts stay file/CLI-only, so neither the UI nor the model can widen what
+  the assistant is allowed to do.
 * Records the subject from `web.auth_subject_header` for the audit log. It is never an authorization
   input, because a header is trivially forged by anything that can reach the port directly.
 

@@ -103,11 +103,11 @@ Then run the hub and open <http://127.0.0.1:8080>.
 vahub run
 ```
 
-The page is the assistant and nothing else: a text box, a microphone button, and a panel that appears
-when a destructive action is waiting for you to confirm it. It is meant to be handed to whoever lives
-in the house. Module state, stderr and the audit log are not on the web; they are read with the CLI on
-the host (`vahub doctor`, `vahub audit`). There is no login: the hub binds to loopback by default, and
-putting it anywhere else means putting an authenticating reverse proxy in front of it. See
+The page is the assistant plus your own settings, behind a login: tabs for Chat, Locations, Settings
+and Schedules. The assistant is a text box, a microphone button, and a panel that appears when a
+destructive action is waiting for you to confirm it. Operator concerns (module state, stderr, the audit
+log, direct tool invocation) stay off the web and are read with the CLI on the host (`vahub doctor`,
+`vahub audit`). Create an account with `vahub user add`; sign in is required by default. See
 [docs/security.md](docs/security.md).
 
 A fresh `vahub.yaml` has `policy.default: deny` and no rules, so the assistant can talk but cannot do
@@ -242,9 +242,10 @@ An annotated configuration is in [examples/vahub.yaml](examples/vahub.yaml). Dep
 
 Read this before you point it at anything that matters.
 
-* **The hub has no authentication.** It binds to loopback by default. Exposing it to a network means
-  putting a proxy in front that does TLS and authenticates clients. The subject the proxy passes is
-  recorded in the audit log; it is not an authorization input.
+* **Authentication is the built-in login or a reverse proxy.** The hub can require a named-account sign
+  in of its own (on by default), or you can turn that off and put a proxy in front that does TLS and
+  authenticates clients. It binds to loopback by default either way. Whoever confirms an action is
+  recorded in the audit log.
 * **Module isolation is a process boundary, a uid and a stripped environment. It is not a sandbox.**
   There are no namespaces and no seccomp filter. A module you install can do anything that uid can do.
 * **Principals are roles, not accounts.** `agent`, `scheduler` and a confirming human are different

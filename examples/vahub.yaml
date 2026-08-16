@@ -35,9 +35,7 @@ hub:
 # web: the HTTP API and the assistant page
 # --------------------------------------------------------------------------
 web:
-  # Loopback. The hub has no authentication of its own, so exposing it further
-  # has to be a decision somebody made on purpose. Put a reverse proxy with TLS
-  # and client certificates in front of it instead (see deploy/docker).
+  # Loopback. Exposing the hub to a network has to be a decision made on purpose.
   host: 127.0.0.1
   port: 8080
 
@@ -48,9 +46,19 @@ web:
   origin_allowlist:
     - https://hub.example.lan:8443
 
+  # The hub's built-in login. On by default, so a browser-reachable hub is not
+  # open. Create an account with `vahub user add`; the hub never sets a password
+  # for you. Turn it off only when a reverse proxy in front already authenticates.
+  auth:
+    enabled: true
+    session_ttl_s: 1209600   # two weeks
+    # Leave true for HTTPS; set false only for a plain-http LAN test, or the
+    # browser drops the session cookie and every login appears to fail.
+    cookie_secure: true
+
   # The header your authenticating proxy sets, recorded in the audit log as the
-  # acting principal. It is information, never an authorization input, and the
-  # proxy must replace it rather than forward what the client sent.
+  # acting principal when the built-in login is off. It is information, never an
+  # authorization input, and the proxy must replace what the client sent.
   auth_subject_header: X-Auth-Subject
 
 # --------------------------------------------------------------------------

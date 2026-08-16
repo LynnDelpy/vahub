@@ -10,7 +10,7 @@ body:
         declares, and gates every call it exposes. It does not have to live in
         this repository and it does not have to be written in Python.
 
-        `docs/writing-modules.md` describes the contract and walks through a
+        [writing-modules](https://github.com/LynnDelpy/vahub-docs/blob/main/writing-modules.md) describes the contract and walks through a
         complete module. `CONTRIBUTING.md` explains how one gets into the
         registry.
 

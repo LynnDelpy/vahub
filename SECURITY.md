@@ -5,7 +5,7 @@ This document says plainly what is trusted, what is not, what the policy gate
 does about it, and where the gate stops helping. It also says how to report a
 vulnerability.
 
-`docs/security.md` covers the same boundary from the operator's side, with the
+[security](https://github.com/LynnDelpy/vahub-docs/blob/main/security.md) covers the same boundary from the operator's side, with the
 configuration that goes with each decision. This file is the shorter statement
 of the model itself.
 
@@ -44,9 +44,9 @@ Three parts, with a boundary between each:
 3. Modules, which are separate processes that speak MCP over stdin and stdout
    and hold the credentials for whatever they talk to.
 
-The gate sits between the agent and the modules, and the scheduler and the
-development endpoint go through it as well. There is no path from a proposed
-action to a module that skips it.
+The gate sits between the agent and the modules, and the scheduler and a
+confirmed action go through it as well. There is no path from a proposed action
+to a module that skips it.
 
 ## What is trusted, and what is not
 
@@ -57,8 +57,8 @@ never a decision. The model is a component that can be steered by its input.
 body of a notification, the name of a device, the text of a transit alert. All
 of it enters the model's context, and any of it can contain instructions aimed
 at the model. This is prompt injection, and it is not solved by prompting. It is
-contained by refusing the resulting calls at the gate, and by keeping the
-console from rendering module output as markup.
+contained by refusing the resulting calls at the gate, and by keeping the web
+page from rendering module output as markup.
 
 **Not trusted: the module process.** A module runs on your machine, with the
 configuration you gave it. The hub does not import it, shares no memory with it,
@@ -67,9 +67,10 @@ and can kill it, but a module is still code you chose to run.
 **Trusted: vahub.yaml.** The configuration file is the operator's word. Anyone
 who can edit it can grant anything. Protect it accordingly.
 
-**Trusted: the operator at the console.** The hub has no user model. It assumes
-that whoever reaches the web interface is allowed to use it, which is why the
-default bind address is loopback.
+**Trusted: a signed-in account, or the operator on the host.** The hub has a
+built-in login (named accounts, on by default) and can instead sit behind an
+authenticating proxy. Whoever writes `vahub.yaml` or runs the CLI on the host can
+grant anything; the login only decides who may use the web interface.
 
 ## What the gate does
 
@@ -122,18 +123,18 @@ default bind address is loopback.
   provider you configure, and speech providers receive your audio. The only
   configurations that keep this on your machine are a local model endpoint and
   browser side speech.
-* **An exposed console.** The hub has no authentication of its own. Binding it
-  to anything other than loopback without an authenticating reverse proxy in
-  front makes every API route, including the confirmation routes, reachable by
-  anyone who can connect. `web.auth_subject_header` records who the proxy says
-  is acting; it is written to the audit log and never used as an authorization
-  input, because a header is trivially forged by anyone who reaches the port
-  directly.
-* **Operator surface on the host, not the web.** The web surface is only the
-  assistant. Module state, module stderr, the tool catalogue and the audit log
-  are read with the CLI (`vahub doctor`, `vahub audit`, `vahub module verify`),
-  which needs shell access to the host. Someone who can talk to the assistant
-  cannot thereby read the history of everything it has ever been asked to do.
+* **An exposed hub with the login off.** Authentication is the built-in login
+  (`web.auth.enabled`, on by default) or a reverse proxy. With it off and the
+  hub bound past loopback, every route is reachable by anyone who can connect.
+  `web.auth_subject_header` records who a proxy says is acting; it is an audit
+  field, never an authorization input, because a header is trivially forged by
+  anyone who reaches the port directly.
+* **Operator surface on the host, not the web.** The web serves the assistant
+  and a signed-in owner's own settings (saved places, preferences, schedules).
+  Module state, module stderr, the tool catalogue and the audit log are read
+  with the CLI (`vahub doctor`, `vahub audit`, `vahub module verify`), which
+  needs shell access. The UI and the assistant edit saved data only; the policy
+  and the accounts stay file/CLI-only.
 * **Denial of service and cost.** The budgets bound one turn (iterations, tool
   result bytes, tokens, wall clock). They keep a loop from becoming an
   unbounded bill. They are not a defence against someone who can reach the API

@@ -152,7 +152,7 @@ it, nothing more.
 
 ### What a module has to get right
 
-`docs/writing-modules.md` walks through a complete module, from the directory
+[writing-modules](https://github.com/LynnDelpy/vahub-docs/blob/main/writing-modules.md) walks through a complete module, from the directory
 layout to the policy rules that let it be called. What follows is the short
 version of what a reviewer will look at.
 

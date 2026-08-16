@@ -8,33 +8,27 @@
 <title>Assistant</title>
 <style nonce="__CSP_NONCE__">
   /*
-   * This page is the assistant, not an operator console. It shows what someone
-   * asked, what came back, and anything waiting for their approval. Module
-   * states, stderr and the tool catalogue are deliberately absent: they are for
-   * whoever runs the service, who has the CLI and the service log.
+   * The assistant, plus a signed-in owner's own settings: saved places, things
+   * to remember, and recurring routines. It is not an operator console; module
+   * states, stderr, the tool catalogue and the audit log are for whoever runs
+   * the service, who has the CLI. Everything a module or the model produced is
+   * inserted as text, never as markup.
    *
    * No external fonts, scripts or images, so it works on a network with no
    * route to the internet and leaks nothing to a third party.
    */
   :root {
     color-scheme: light dark;
-    --bg: #ffffff;
-    --fg: #17181c;
-    --muted: #6a6f7a;
-    --line: #e3e5ea;
-    --mine: #2f6feb;
-    --mine-fg: #ffffff;
-    --theirs: #f2f3f5;
-    --warn-bg: #fff6e5;
-    --warn-line: #e5a63a;
-    --danger: #c8372d;
-    --radius: 14px;
+    --bg: #ffffff; --fg: #17181c; --muted: #6a6f7a; --line: #e3e5ea;
+    --mine: #2f6feb; --mine-fg: #ffffff; --theirs: #f2f3f5;
+    --warn-bg: #fff6e5; --warn-line: #e5a63a; --danger: #c8372d;
+    --card: #fafbfc; --radius: 14px;
   }
   @media (prefers-color-scheme: dark) {
     :root {
       --bg: #16171a; --fg: #e9eaee; --muted: #9aa0ab; --line: #2b2d33;
       --mine: #3b7bf0; --theirs: #232529; --warn-bg: #2e2717; --warn-line: #9a7420;
-      --danger: #f0645a;
+      --danger: #f0645a; --card: #1d1f23;
     }
   }
   * { box-sizing: border-box; }
@@ -45,34 +39,36 @@
     display: flex; flex-direction: column;
   }
   header {
-    padding: .9rem 1rem; border-bottom: 1px solid var(--line);
-    display: flex; align-items: baseline; gap: .6rem;
+    padding: .7rem 1rem; border-bottom: 1px solid var(--line);
+    display: flex; align-items: center; gap: .6rem; flex-wrap: wrap;
   }
   header h1 { font-size: 1rem; font-weight: 600; margin: 0; letter-spacing: .01em; }
   header .state { font-size: .8rem; color: var(--muted); }
+  header .spacer { flex: 1; }
+  header .who { font-size: .8rem; color: var(--muted); }
+  nav { display: flex; gap: .2rem; }
+  nav button {
+    font: inherit; font-size: .9rem; padding: .35rem .7rem; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; background: transparent; color: var(--muted);
+  }
+  nav button.active { background: var(--theirs); color: var(--fg); }
+  .linkbtn { font: inherit; font-size: .8rem; background: none; border: none; color: var(--mine); cursor: pointer; padding: 0; }
 
-  main {
-    flex: 1; overflow-y: auto; padding: 1rem;
-    display: flex; flex-direction: column; gap: .7rem;
-    max-width: 46rem; width: 100%; margin: 0 auto;
-  }
-  .msg {
-    padding: .6rem .85rem; border-radius: var(--radius); max-width: 85%;
-    white-space: pre-wrap; overflow-wrap: anywhere;
-  }
+  main { flex: 1; overflow-y: auto; }
+  .panel { display: none; padding: 1rem; max-width: 46rem; width: 100%; margin: 0 auto; }
+  .panel.active { display: block; }
+  #thread.active { display: flex; flex-direction: column; gap: .7rem; }
+
+  .msg { padding: .6rem .85rem; border-radius: var(--radius); max-width: 85%; white-space: pre-wrap; overflow-wrap: anywhere; }
   .msg.mine { align-self: flex-end; background: var(--mine); color: var(--mine-fg); border-bottom-right-radius: 5px; }
   .msg.theirs { align-self: flex-start; background: var(--theirs); border-bottom-left-radius: 5px; }
   .msg.problem { align-self: flex-start; background: transparent; color: var(--danger); border: 1px solid var(--danger); }
   .msg.thinking { color: var(--muted); font-style: italic; }
-  .empty { margin: auto; text-align: center; color: var(--muted); max-width: 26rem; }
+  .empty { margin: 2rem auto; text-align: center; color: var(--muted); max-width: 26rem; }
   .empty p { margin: .4rem 0; }
   .empty .examples { font-size: .9rem; }
 
-  /* Something needs a person to approve it before it happens. */
-  .approval {
-    align-self: stretch; background: var(--warn-bg);
-    border: 1px solid var(--warn-line); border-radius: var(--radius); padding: .8rem .9rem;
-  }
+  .approval { align-self: stretch; background: var(--warn-bg); border: 1px solid var(--warn-line); border-radius: var(--radius); padding: .8rem .9rem; }
   .approval p { margin: 0 0 .7rem; }
   .approval .what { font-weight: 600; }
   .approval .args { margin: 0 0 .7rem; padding: .5rem .7rem; list-style: none; border: 1px solid var(--line); border-radius: 8px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .82rem; }
@@ -85,44 +81,75 @@
 
   footer { border-top: 1px solid var(--line); padding: .7rem 1rem 1rem; }
   .composer { display: flex; gap: .5rem; max-width: 46rem; margin: 0 auto; }
-  .composer input[type=text] {
-    flex: 1; font: inherit; padding: .65rem .8rem; border-radius: 11px;
-    border: 1px solid var(--line); background: var(--bg); color: var(--fg); min-width: 0;
-  }
+  .composer input[type=text] { flex: 1; font: inherit; padding: .65rem .8rem; border-radius: 11px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); min-width: 0; }
   .composer input[type=text]:focus { outline: 2px solid var(--mine); outline-offset: -1px; }
-  .composer button {
-    font: inherit; padding: .65rem .9rem; border-radius: 11px; cursor: pointer;
-    border: 1px solid var(--line); background: var(--theirs); color: var(--fg);
-  }
+  .composer button { font: inherit; padding: .65rem .9rem; border-radius: 11px; cursor: pointer; border: 1px solid var(--line); background: var(--theirs); color: var(--fg); }
   .composer .send { background: var(--mine); color: var(--mine-fg); border-color: transparent; }
   .composer button[disabled] { opacity: .5; cursor: default; }
   .composer .mic.recording { background: var(--danger); color: #fff; border-color: transparent; }
   .hint { max-width: 46rem; margin: .5rem auto 0; font-size: .8rem; color: var(--muted); display: flex; gap: 1rem; }
   .hint label { cursor: pointer; }
-  .visually-hidden {
-    position: absolute; width: 1px; height: 1px; overflow: hidden;
-    clip: rect(0 0 0 0); white-space: nowrap;
-  }
+
+  /* forms and lists shared by the settings panels */
+  h2 { font-size: 1rem; margin: 0 0 .3rem; }
+  .sub { color: var(--muted); font-size: .85rem; margin: 0 0 1rem; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 1rem; margin-bottom: 1.2rem; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: .6rem; }
+  .grid .full { grid-column: 1 / -1; }
+  label.field { display: flex; flex-direction: column; gap: .2rem; font-size: .8rem; color: var(--muted); }
+  input, textarea, select { font: inherit; padding: .5rem .6rem; border-radius: 9px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); width: 100%; }
+  textarea { resize: vertical; min-height: 3rem; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .85rem; }
+  .btn { font: inherit; padding: .5rem .9rem; border-radius: 9px; cursor: pointer; border: 1px solid var(--line); background: var(--theirs); color: var(--fg); }
+  .btn.primary { background: var(--mine); color: var(--mine-fg); border-color: transparent; }
+  .btn.small { padding: .25rem .55rem; font-size: .82rem; }
+  .btn.danger { color: var(--danger); }
+  .row-actions { margin-top: .8rem; display: flex; gap: .5rem; }
+  .items { list-style: none; padding: 0; margin: 0; }
+  .items li { display: flex; align-items: center; gap: .6rem; padding: .55rem 0; border-top: 1px solid var(--line); }
+  .items li .grow { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  .items .meta { color: var(--muted); font-size: .82rem; }
+  .note { font-size: .82rem; color: var(--muted); }
+  .err { color: var(--danger); font-size: .85rem; min-height: 1.2em; }
+
+  /* login / setup overlay */
+  #gate { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; background: var(--bg); padding: 1rem; }
+  #gate.active { display: flex; }
+  #gate .box { width: 100%; max-width: 22rem; }
+  #gate h1 { text-align: center; }
+  .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 </style>
 </head>
 <body>
-  <header>
+  <header id="topbar" hidden>
     <h1>Assistant</h1>
+    <nav id="nav">
+      <button data-tab="thread" class="active" type="button">Chat</button>
+      <button data-tab="locations" type="button">Locations</button>
+      <button data-tab="settings" type="button">Settings</button>
+      <button data-tab="schedules" type="button">Schedules</button>
+    </nav>
+    <span class="spacer"></span>
     <span class="state" id="state" role="status" aria-live="polite"></span>
+    <span class="who" id="who"></span>
+    <button class="linkbtn" id="logout" type="button" hidden>sign out</button>
   </header>
 
-  <main id="thread" aria-live="polite">
-    <div class="empty" id="empty">
-      <p>Ask for something.</p>
-      <p class="examples">"what time is it in Tokyo?"<br />"turn on the kitchen light"</p>
+  <main>
+    <div class="panel" id="thread" aria-live="polite">
+      <div class="empty" id="empty">
+        <p>Ask for something.</p>
+        <p class="examples">"what time is it in Tokyo?"<br />"remember that my home is in Zurich"</p>
+      </div>
     </div>
+    <section class="panel" id="locations" aria-label="Saved locations"></section>
+    <section class="panel" id="settings" aria-label="Settings"></section>
+    <section class="panel" id="schedules" aria-label="Schedules"></section>
   </main>
 
-  <footer>
+  <footer id="composerBar" hidden>
     <div class="composer">
       <label class="visually-hidden" for="input">Message</label>
-      <input id="input" type="text" autocomplete="off" autocapitalize="sentences"
-             placeholder="Ask something" />
+      <input id="input" type="text" autocomplete="off" autocapitalize="sentences" placeholder="Ask something" />
       <button id="mic" class="mic" type="button" title="Speak" aria-label="Speak">Speak</button>
       <button id="send" class="send" type="button">Send</button>
     </div>
@@ -132,67 +159,86 @@
     </div>
   </footer>
 
+  <div id="gate">
+    <div class="box card">
+      <h1>Sign in</h1>
+      <div id="gateBody"></div>
+    </div>
+  </div>
+
 <script nonce="__CSP_NONCE__">
 (function () {
   "use strict";
 
-  // Everything the page renders is inserted as text. Replies and approval
-  // prompts contain strings that originated in a module, and a module is code
-  // this hub did not write, so none of it is ever parsed as markup.
-  const thread   = document.getElementById("thread");
-  const empty    = document.getElementById("empty");
-  const input    = document.getElementById("input");
-  const sendBtn  = document.getElementById("send");
-  const micBtn   = document.getElementById("mic");
-  const readBox  = document.getElementById("readAloud");
-  const stateEl  = document.getElementById("state");
-  const voiceNote = document.getElementById("voiceNote");
+  // ---- tiny safe DOM helper --------------------------------------------
+  // Children are appended as text nodes or elements; nothing is ever set as
+  // innerHTML, so module- and model-supplied strings cannot become markup.
+  function el(tag, props, children) {
+    const node = document.createElement(tag);
+    if (props) {
+      Object.keys(props).forEach(function (k) {
+        if (k === "class") node.className = props[k];
+        else if (k === "text") node.textContent = props[k];
+        else if (k === "type") node.type = props[k];
+        else if (k.slice(0, 2) === "on") node.addEventListener(k.slice(2), props[k]);
+        else node.setAttribute(k, props[k]);
+      });
+    }
+    (children || []).forEach(function (c) {
+      node.appendChild(typeof c === "string" ? document.createTextNode(c) : c);
+    });
+    return node;
+  }
+
+  async function api(method, path, body) {
+    const opts = { method: method, headers: {} };
+    if (body !== undefined) {
+      opts.headers["content-type"] = "application/json";
+      opts.body = JSON.stringify(body);
+    }
+    const r = await fetch(path, opts);
+    let data = {};
+    try { data = await r.json(); } catch (e) { /* empty body */ }
+    return { ok: r.ok, status: r.status, data: data };
+  }
+
+  const $ = function (id) { return document.getElementById(id); };
+  const thread = $("thread"), empty = $("empty"), input = $("input");
+  const sendBtn = $("send"), micBtn = $("mic"), readBox = $("readAloud");
+  const stateEl = $("state"), voiceNote = $("voiceNote");
 
   let sessionId = null;
   let config = { stt_provider: "browser", tts_provider: "browser" };
-  const shown = new Set();   // approval ids already on screen
+  const shown = new Set();
+  let assistantStarted = false;
 
-  function atBottom() {
-    return thread.scrollHeight - thread.scrollTop - thread.clientHeight < 60;
-  }
-  function scroll(force) {
-    if (force || atBottom()) thread.scrollTop = thread.scrollHeight;
-  }
-  function clearEmpty() {
-    if (empty && empty.parentNode) empty.remove();
-  }
+  function atBottom() { return thread.scrollHeight - thread.scrollTop - thread.clientHeight < 60; }
+  function scroll(force) { if (force || atBottom()) thread.scrollTop = thread.scrollHeight; }
+  function clearEmpty() { if (empty && empty.parentNode) empty.remove(); }
   function bubble(text, kind) {
     clearEmpty();
     const stick = atBottom();
-    const el = document.createElement("div");
-    el.className = "msg " + kind;
-    el.textContent = text;
-    thread.appendChild(el);
+    const node = el("div", { class: "msg " + kind, text: text });
+    thread.appendChild(node);
     scroll(stick);
-    return el;
+    return node;
   }
   function setState(text) { stateEl.textContent = text || ""; }
 
   // ---- speaking ---------------------------------------------------------
   function speak(text) {
     if (!text || !readBox.checked) return;
-    if (config.tts_provider !== "browser") return;   // the server sent audio
+    if (config.tts_provider !== "browser") return;
     if (!("speechSynthesis" in window)) return;
     window.speechSynthesis.cancel();
     window.speechSynthesis.speak(new SpeechSynthesisUtterance(text));
   }
 
   // ---- approvals --------------------------------------------------------
-  // The hub refuses to perform a destructive action on the model's say-so. It
-  // parks the call with the arguments frozen and waits for a person here.
   function describe(p) {
     const what = (p.module || "") + "." + (p.tool || "");
     return p.reason ? what + " (" + p.reason + ")" : what;
   }
-
-  // The exact arguments that will run, so a person approves what they can see
-  // rather than a bare tool name. These are the frozen values that already
-  // passed the gate; inserted as text, never as markup.
   function argLines(p) {
     const args = p && p.args;
     if (!args || typeof args !== "object") return [];
@@ -203,127 +249,73 @@
       return k + ": " + v;
     });
   }
-
   function showApproval(p) {
     const id = p.pending_id || p.id;
     if (!id || shown.has(id)) return;
     shown.add(id);
     clearEmpty();
 
-    const card = document.createElement("div");
-    card.className = "approval";
-
-    const line = document.createElement("p");
-    const lead = document.createElement("span");
-    lead.textContent = "Needs your approval: ";
-    const what = document.createElement("span");
-    what.className = "what";
-    what.textContent = describe(p);
-    line.append(lead, what);
-
+    const card = el("div", { class: "approval" });
+    const line = el("p", null, [
+      el("span", { text: "Needs your approval: " }),
+      el("span", { class: "what", text: describe(p) }),
+    ]);
+    card.appendChild(line);
     const rows = argLines(p);
     if (rows.length) {
-      const args = document.createElement("ul");
-      args.className = "args";
-      rows.forEach(function (text) {
-        const li = document.createElement("li");
-        li.textContent = text;
-        args.appendChild(li);
-      });
-      card.appendChild(line);
-      card.appendChild(args);
-    } else {
-      card.appendChild(line);
+      card.appendChild(el("ul", { class: "args" }, rows.map(function (t) { return el("li", { text: t }); })));
     }
 
-    const row = document.createElement("div");
-    row.className = "row";
-    const yes = document.createElement("button");
-    yes.className = "yes"; yes.type = "button"; yes.textContent = "Approve";
-    const no = document.createElement("button");
-    no.className = "no"; no.type = "button"; no.textContent = "Dismiss";
-    const expiry = document.createElement("span");
-    expiry.className = "expiry";
-
-    row.append(yes, no, expiry);
-    card.appendChild(row);
+    const yes = el("button", { class: "yes", type: "button", text: "Approve" });
+    const no = el("button", { class: "no", type: "button", text: "Dismiss" });
+    const expiry = el("span", { class: "expiry" });
+    card.appendChild(el("div", { class: "row" }, [yes, no, expiry]));
     thread.appendChild(card);
     scroll(true);
 
-    // The approval expires. Saying so avoids someone approving into a void.
-    // A live event carries ttl_s (seconds remaining); a row loaded from
-    // /api/pending carries an absolute expires_at. Support both, so the live
-    // card shows a countdown and self-expires like the reloaded one.
     let countdown = null;
     const expiresAt = p.expires_at || (p.ttl_s ? Date.now() / 1000 + p.ttl_s : null);
-    const stopCountdown = function () {
-      if (countdown) { clearInterval(countdown); countdown = null; }
-    };
+    const stopCountdown = function () { if (countdown) { clearInterval(countdown); countdown = null; } };
     if (expiresAt) {
       const tick = function () {
         const left = Math.round(expiresAt - Date.now() / 1000);
-        if (left <= 0) {
-          stopCountdown();
-          card.remove();
-          bubble("That approval expired. Ask again if you still want it.", "theirs");
-        } else {
-          expiry.textContent = left + "s left";
-        }
+        if (left <= 0) { stopCountdown(); card.remove(); bubble("That approval expired. Ask again if you still want it.", "theirs"); }
+        else expiry.textContent = left + "s left";
       };
       tick();
       countdown = setInterval(tick, 1000);
     }
-
-    const finish = function (text, kind) {
-      stopCountdown();
-      card.remove();
-      if (text) bubble(text, kind || "theirs");
-    };
-
+    const finish = function (text, kind) { stopCountdown(); card.remove(); if (text) bubble(text, kind || "theirs"); };
     yes.addEventListener("click", async function () {
-      // Stop the countdown immediately: the request is in flight and a tick that
-      // fired now would remove the card and print a contradictory "expired".
       stopCountdown();
       yes.disabled = no.disabled = true;
-      try {
-        const r = await fetch("/api/confirm/" + encodeURIComponent(id), { method: "POST" });
-        const data = await r.json().catch(function () { return {}; });
-        if (r.ok && data.ok) finish("Done.");
-        else finish("It did not go through: " + (data.detail || data.error || r.status), "problem");
-      } catch (e) {
-        finish("It did not go through: " + e, "problem");
-      }
+      const r = await api("POST", "/api/confirm/" + encodeURIComponent(id));
+      if (r.ok && r.data.ok) finish("Done.");
+      else finish("It did not go through: " + (r.data.detail || r.data.error || r.status), "problem");
     });
     no.addEventListener("click", function () { finish("Left alone."); });
   }
-
   async function loadPending() {
-    try {
-      const r = await fetch("/api/pending");
-      if (!r.ok) return;
-      const rows = await r.json();
-      if (Array.isArray(rows)) rows.forEach(showApproval);
-    } catch (e) { /* nothing waiting is the normal case */ }
+    const r = await api("GET", "/api/pending");
+    if (r.ok && Array.isArray(r.data)) r.data.forEach(showApproval);
   }
 
   // ---- live approvals over the socket -----------------------------------
+  let wsBackoff = 1000;
   function connect() {
     let ws;
     try {
       const proto = location.protocol === "https:" ? "wss:" : "ws:";
       ws = new WebSocket(proto + "//" + location.host + "/ws/events");
     } catch (e) { return; }
-
-    ws.onopen = function () { setState(""); loadPending(); };
+    ws.onopen = function () { setState(""); wsBackoff = 1000; loadPending(); };
     ws.onclose = function () {
-      // Losing the socket only costs live approval prompts; typing still works,
-      // so this is a quiet note rather than an error.
       setState("reconnecting");
-      setTimeout(connect, 2000);
+      setTimeout(connect, wsBackoff);
+      wsBackoff = Math.min(wsBackoff * 2, 30000);   // back off instead of hammering
     };
     ws.onmessage = function (ev) {
-      let msg;
-      try { msg = JSON.parse(ev.data); } catch (e) { return; }
+      let msg; try { msg = JSON.parse(ev.data); } catch (e) { return; }
       if (msg && msg.type === "confirm" && msg.data) showApproval(msg.data);
     };
   }
@@ -336,32 +328,19 @@
     sendBtn.disabled = true;
     bubble(message, "mine");
     const pending = bubble("...", "theirs thinking");
-
-    try {
-      const r = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ message: message, session_id: sessionId }),
-      });
-      const data = await r.json().catch(function () { return {}; });
-      pending.remove();
-      if (!r.ok) {
-        bubble(data.detail || ("Something went wrong (" + r.status + ")."), "problem");
-        return;
-      }
-      sessionId = data.session_id || sessionId;
-      const reply = data.reply || "";
-      if (reply) { bubble(reply, "theirs"); speak(reply); }
-      loadPending();   // the turn may have parked something for approval
-    } catch (e) {
-      pending.remove();
-      bubble("Could not reach the assistant.", "problem");
-    } finally {
-      sendBtn.disabled = false;
-      input.focus();
+    const r = await api("POST", "/api/chat", { message: message, session_id: sessionId });
+    pending.remove();
+    if (!r.ok) {
+      if (r.status === 401) { showGate(); return; }
+      bubble(r.data.detail || ("Something went wrong (" + r.status + ")."), "problem");
+    } else {
+      sessionId = r.data.session_id || sessionId;
+      if (r.data.reply) { bubble(r.data.reply, "theirs"); speak(r.data.reply); }
+      loadPending();
     }
+    sendBtn.disabled = false;
+    input.focus();
   }
-
   sendBtn.addEventListener("click", function () { send(); });
   input.addEventListener("keydown", function (e) {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
@@ -369,47 +348,29 @@
 
   // ---- microphone -------------------------------------------------------
   let recognizer = null, recorder = null, recording = false;
-
-  function setRecording(on) {
-    recording = on;
-    micBtn.classList.toggle("recording", on);
-    micBtn.textContent = on ? "Stop" : "Speak";
-  }
-
+  function setRecording(on) { recording = on; micBtn.classList.toggle("recording", on); micBtn.textContent = on ? "Stop" : "Speak"; }
   function useBrowserSpeech() {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) {
-      micBtn.disabled = true;
-      voiceNote.textContent = "Speaking needs Chrome or Edge. Typing works everywhere.";
-      return;
-    }
+    if (!SR) { micBtn.disabled = true; voiceNote.textContent = "Speaking needs Chrome or Edge. Typing works everywhere."; return; }
     recognizer = new SR();
     recognizer.lang = navigator.language || "en-US";
     recognizer.interimResults = false;
     recognizer.maxAlternatives = 1;
     recognizer.onresult = function (e) { send(e.results[0][0].transcript); };
     recognizer.onend = function () { setRecording(false); };
-    recognizer.onerror = function (e) {
-      setRecording(false);
-      if (e.error !== "aborted") voiceNote.textContent = "Microphone: " + e.error;
-    };
+    recognizer.onerror = function (e) { setRecording(false); if (e.error !== "aborted") voiceNote.textContent = "Microphone: " + e.error; };
     micBtn.addEventListener("click", function () {
       if (recording) { recognizer.stop(); return; }
       setRecording(true);
       try { recognizer.start(); } catch (e) { setRecording(false); }
     });
   }
-
   function useServerSpeech() {
     micBtn.addEventListener("click", async function () {
       if (recording) { if (recorder) recorder.stop(); return; }
       let stream;
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      } catch (e) {
-        voiceNote.textContent = "Microphone unavailable.";
-        return;
-      }
+      try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
+      catch (e) { voiceNote.textContent = "Microphone unavailable."; return; }
       const chunks = [];
       recorder = new MediaRecorder(stream);
       recorder.ondataavailable = function (e) { if (e.data.size) chunks.push(e.data); };
@@ -421,41 +382,294 @@
         if (sessionId) form.append("session_id", sessionId);
         const thinking = bubble("...", "theirs thinking");
         try {
-          const r = await fetch("/api/voice", { method: "POST", body: form });
-          const data = await r.json().catch(function () { return {}; });
+          const resp = await fetch("/api/voice", { method: "POST", body: form });
+          const data = await resp.json().catch(function () { return {}; });
           thinking.remove();
           if (data.ok === false) { bubble(data.detail || data.error, "problem"); return; }
           if (data.transcript) bubble(data.transcript, "mine");
           sessionId = data.session_id || sessionId;
           if (data.reply) bubble(data.reply, "theirs");
-          if (data.audio) {
-            new Audio("data:" + (data.audio_mime || "audio/mpeg") + ";base64," + data.audio).play();
-          } else {
-            speak(data.reply || "");
-          }
+          if (data.audio) new Audio("data:" + (data.audio_mime || "audio/mpeg") + ";base64," + data.audio).play();
+          else speak(data.reply || "");
           loadPending();
-        } catch (e) {
-          thinking.remove();
-          bubble("Could not send the recording.", "problem");
-        }
+        } catch (e) { thinking.remove(); bubble("Could not send the recording.", "problem"); }
       };
       recorder.start();
       setRecording(true);
     });
   }
 
-  async function start() {
-    try {
-      const r = await fetch("/api/client-config");
-      if (r.ok) config = await r.json();
-    } catch (e) { /* defaults are fine */ }
-    if (config.stt_provider === "openai_compat") useServerSpeech();
-    else useBrowserSpeech();
-    connect();
-    input.focus();
+  function startAssistant() {
+    if (assistantStarted) return;
+    assistantStarted = true;
+    (async function () {
+      const r = await api("GET", "/api/client-config");
+      if (r.ok) config = r.data;
+      if (config.stt_provider === "openai_compat") useServerSpeech();
+      else useBrowserSpeech();
+      connect();
+    })();
   }
 
-  start();
+  // ---- panels: locations, settings, schedules ---------------------------
+  function panelErr(panel, msg) {
+    const box = panel.querySelector(".err");
+    if (box) box.textContent = msg || "";
+  }
+
+  async function renderLocations() {
+    const panel = $("locations");
+    panel.textContent = "";
+    panel.appendChild(el("h2", { text: "Saved places" }));
+    panel.appendChild(el("p", { class: "sub", text: "Home, work, and anywhere the assistant should know by name." }));
+
+    const list = el("ul", { class: "items" });
+    const r = await api("GET", "/api/locations");
+    (r.data.locations || []).forEach(function (loc) {
+      const bits = [];
+      if (loc.latitude != null && loc.longitude != null) bits.push(loc.latitude + ", " + loc.longitude);
+      if (loc.address) bits.push(loc.address);
+      const del = el("button", { class: "btn small danger", type: "button", text: "Delete" });
+      del.addEventListener("click", async function () {
+        await api("DELETE", "/api/locations/" + encodeURIComponent(loc.name));
+        renderLocations();
+      });
+      list.appendChild(el("li", null, [
+        el("span", { class: "grow" }, [
+          el("strong", { text: loc.label || loc.name }), el("span", { class: "meta", text: "  " + (bits.join("  ·  ")) }),
+        ]),
+        del,
+      ]));
+    });
+    if (!(r.data.locations || []).length) list.appendChild(el("li", { class: "note", text: "Nothing saved yet." }));
+
+    const name = el("input", { type: "text", placeholder: "name (e.g. home)" });
+    const label = el("input", { type: "text", placeholder: "label (optional)" });
+    const lat = el("input", { type: "number", step: "any", placeholder: "latitude" });
+    const lon = el("input", { type: "number", step: "any", placeholder: "longitude" });
+    const address = el("input", { type: "text", placeholder: "address (optional)" });
+    const err = el("div", { class: "err" });
+    const save = el("button", { class: "btn primary", type: "button", text: "Save place" });
+    save.addEventListener("click", async function () {
+      err.textContent = "";
+      const n = name.value.trim();
+      if (!n) { err.textContent = "A name is required."; return; }
+      const body = { label: label.value.trim() || null, address: address.value.trim() || null };
+      if (lat.value !== "") body.latitude = Number(lat.value);
+      if (lon.value !== "") body.longitude = Number(lon.value);
+      const res = await api("PUT", "/api/locations/" + encodeURIComponent(n), body);
+      if (!res.ok) { err.textContent = "Could not save (check the coordinates)."; return; }
+      renderLocations();
+    });
+
+    panel.appendChild(el("div", { class: "card" }, [list]));
+    panel.appendChild(el("div", { class: "card" }, [
+      el("div", { class: "grid" }, [
+        el("label", { class: "field" }, ["name", name]),
+        el("label", { class: "field" }, ["label", label]),
+        el("label", { class: "field" }, ["latitude", lat]),
+        el("label", { class: "field" }, ["longitude", lon]),
+        el("label", { class: "field full" }, ["address", address]),
+      ]),
+      err,
+      el("div", { class: "row-actions" }, [save]),
+    ]));
+  }
+
+  async function renderSettings() {
+    const panel = $("settings");
+    panel.textContent = "";
+    panel.appendChild(el("h2", { text: "Preferences" }));
+    panel.appendChild(el("p", { class: "sub", text: "Simple key/value settings, e.g. units = metric, language = en." }));
+
+    const r = await api("GET", "/api/settings");
+    const prefs = r.data.settings || {};
+    const memory = r.data.memory || {};
+
+    const list = el("ul", { class: "items" });
+    Object.keys(prefs).forEach(function (k) {
+      const del = el("button", { class: "btn small danger", type: "button", text: "Delete" });
+      del.addEventListener("click", async function () { await api("DELETE", "/api/settings/" + encodeURIComponent(k)); renderSettings(); });
+      list.appendChild(el("li", null, [
+        el("span", { class: "grow" }, [el("strong", { text: k }), el("span", { class: "meta", text: "  " + JSON.stringify(prefs[k]) })]),
+        del,
+      ]));
+    });
+    if (!Object.keys(prefs).length) list.appendChild(el("li", { class: "note", text: "No preferences set." }));
+
+    const key = el("input", { type: "text", placeholder: "key (e.g. units)" });
+    const value = el("input", { type: "text", placeholder: "value (e.g. metric)" });
+    const err = el("div", { class: "err" });
+    const save = el("button", { class: "btn primary", type: "button", text: "Save preference" });
+    save.addEventListener("click", async function () {
+      err.textContent = "";
+      const k = key.value.trim();
+      if (!k) { err.textContent = "A key is required."; return; }
+      const res = await api("PUT", "/api/settings/" + encodeURIComponent(k), { value: value.value });
+      if (!res.ok) { err.textContent = "Could not save (keys are lowercase letters, digits, . _ : -)."; return; }
+      renderSettings();
+    });
+
+    panel.appendChild(el("div", { class: "card" }, [list]));
+    panel.appendChild(el("div", { class: "card" }, [
+      el("div", { class: "grid" }, [
+        el("label", { class: "field" }, ["key", key]),
+        el("label", { class: "field" }, ["value", value]),
+      ]),
+      err,
+      el("div", { class: "row-actions" }, [save]),
+    ]));
+
+    // What the assistant has been asked to remember, read-only here.
+    const memList = el("ul", { class: "items" });
+    Object.keys(memory).forEach(function (k) {
+      memList.appendChild(el("li", null, [el("span", { class: "grow" }, [el("strong", { text: k }), el("span", { class: "meta", text: "  " + JSON.stringify(memory[k]) })])]));
+    });
+    if (Object.keys(memory).length) {
+      panel.appendChild(el("h2", { text: "The assistant remembers" }));
+      panel.appendChild(el("p", { class: "sub", text: "Facts you asked it to keep. Ask it to forget one to remove it." }));
+      panel.appendChild(el("div", { class: "card" }, [memList]));
+    }
+  }
+
+  async function renderSchedules() {
+    const panel = $("schedules");
+    panel.textContent = "";
+    panel.appendChild(el("h2", { text: "Schedules" }));
+    panel.appendChild(el("p", { class: "sub", text: "Routines that run on a cron schedule. They act unattended, so they can only do what the scheduler is allowed to do." }));
+
+    const list = el("ul", { class: "items" });
+    const r = await api("GET", "/api/schedules");
+    (r.data.schedules || []).forEach(function (s) {
+      const steps = (s.steps || []).map(function (st) { return st.module + "." + st.tool; }).join(", ");
+      const meta = el("span", { class: "grow" }, [
+        el("strong", { text: s.cron }),
+        el("span", { class: "meta", text: "  " + steps + (s.enabled ? "" : "  (disabled)") }),
+      ]);
+      const actions = [];
+      if (s.editable) {
+        const toggle = el("button", { class: "btn small", type: "button", text: s.enabled ? "Disable" : "Enable" });
+        toggle.addEventListener("click", async function () { await api("POST", "/api/schedules/" + encodeURIComponent(s.id) + "/enabled", { enabled: !s.enabled }); renderSchedules(); });
+        const del = el("button", { class: "btn small danger", type: "button", text: "Delete" });
+        del.addEventListener("click", async function () { await api("DELETE", "/api/schedules/" + encodeURIComponent(s.id)); renderSchedules(); });
+        actions.push(toggle, del);
+      } else {
+        actions.push(el("span", { class: "meta", text: "from config" }));
+      }
+      list.appendChild(el("li", null, [meta].concat(actions)));
+    });
+    if (!(r.data.schedules || []).length) list.appendChild(el("li", { class: "note", text: "No schedules yet." }));
+
+    const cron = el("input", { type: "text", placeholder: "cron, e.g. 30 6 * * 1-5" });
+    const module = el("input", { type: "text", placeholder: "module (e.g. time)" });
+    const tool = el("input", { type: "text", placeholder: "tool (e.g. speak_current_time)" });
+    const argsBox = el("textarea", { placeholder: '{ } arguments as JSON (optional)' });
+    const desc = el("input", { type: "text", placeholder: "description (optional)" });
+    const err = el("div", { class: "err" });
+    const save = el("button", { class: "btn primary", type: "button", text: "Create schedule" });
+    save.addEventListener("click", async function () {
+      err.textContent = "";
+      let args = {};
+      if (argsBox.value.trim()) {
+        try { args = JSON.parse(argsBox.value); } catch (e) { err.textContent = "Arguments must be valid JSON."; return; }
+      }
+      if (!cron.value.trim() || !module.value.trim() || !tool.value.trim()) { err.textContent = "cron, module and tool are required."; return; }
+      const res = await api("POST", "/api/schedules", {
+        cron: cron.value.trim(),
+        steps: [{ module: module.value.trim(), tool: tool.value.trim(), args: args }],
+        description: desc.value.trim() || null,
+      });
+      if (!res.ok) { err.textContent = "Could not create: " + (res.data.detail || res.data.error || res.status); return; }
+      cron.value = module.value = tool.value = argsBox.value = desc.value = "";
+      renderSchedules();
+    });
+
+    panel.appendChild(el("div", { class: "card" }, [list]));
+    panel.appendChild(el("div", { class: "card" }, [
+      el("div", { class: "grid" }, [
+        el("label", { class: "field full" }, ["cron expression", cron]),
+        el("label", { class: "field" }, ["module", module]),
+        el("label", { class: "field" }, ["tool", tool]),
+        el("label", { class: "field full" }, ["arguments (JSON)", argsBox]),
+        el("label", { class: "field full" }, ["description", desc]),
+      ]),
+      err,
+      el("div", { class: "row-actions" }, [save]),
+    ]));
+  }
+
+  // ---- tabs -------------------------------------------------------------
+  const renderers = { locations: renderLocations, settings: renderSettings, schedules: renderSchedules };
+  function selectTab(name) {
+    document.querySelectorAll("nav button").forEach(function (b) { b.classList.toggle("active", b.dataset.tab === name); });
+    document.querySelectorAll("main .panel").forEach(function (p) { p.classList.toggle("active", p.id === name); });
+    $("composerBar").hidden = name !== "thread";
+    if (renderers[name]) renderers[name]();
+    if (name === "thread") input.focus();
+  }
+  document.querySelectorAll("nav button").forEach(function (b) {
+    b.addEventListener("click", function () { selectTab(b.dataset.tab); });
+  });
+
+  // ---- auth gate --------------------------------------------------------
+  const gate = $("gate"), gateBody = $("gateBody");
+  function showApp(me) {
+    gate.classList.remove("active");
+    $("topbar").hidden = false;
+    if (me && me.username) { $("who").textContent = me.username; $("logout").hidden = false; }
+    selectTab("thread");
+    startAssistant();
+  }
+  function showGate() {
+    $("topbar").hidden = true;
+    $("composerBar").hidden = true;
+    gate.classList.add("active");
+  }
+  function renderLogin(setup) {
+    gateBody.textContent = "";
+    if (setup) {
+      gateBody.appendChild(el("p", { class: "note", text: "No account exists yet. On the machine running the hub, create one:" }));
+      gateBody.appendChild(el("p", null, [el("code", { text: "vahub user add <name>" })]));
+      return;
+    }
+    const user = el("input", { type: "text", placeholder: "username", autocomplete: "username" });
+    const pass = el("input", { type: "password", placeholder: "password", autocomplete: "current-password" });
+    const err = el("div", { class: "err" });
+    const btn = el("button", { class: "btn primary", type: "submit", text: "Sign in" });
+    const form = el("form", null, [
+      el("label", { class: "field" }, ["username", user]),
+      el("label", { class: "field" }, ["password", pass]),
+      err,
+      el("div", { class: "row-actions" }, [btn]),
+    ]);
+    form.addEventListener("submit", async function (e) {
+      e.preventDefault();
+      err.textContent = "";
+      btn.disabled = true;
+      const r = await api("POST", "/api/login", { username: user.value, password: pass.value });
+      btn.disabled = false;
+      if (r.ok && r.data.ok) boot();
+      else if (r.status === 429) err.textContent = "Too many attempts. Wait a few minutes.";
+      else err.textContent = "Wrong username or password.";
+    });
+    gateBody.appendChild(form);
+    user.focus();
+  }
+  $("logout").addEventListener("click", async function () {
+    await api("POST", "/api/logout");
+    renderLogin(false);
+    showGate();
+  });
+
+  async function boot() {
+    const r = await api("GET", "/api/me");
+    const me = r.data || {};
+    if (!me.auth || me.authenticated) { showApp(me); return; }
+    renderLogin(!!me.setup_required);
+    showGate();
+  }
+
+  boot();
 })();
 </script>
 </body>

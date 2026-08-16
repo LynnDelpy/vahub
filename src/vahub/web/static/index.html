@@ -111,6 +111,25 @@
   .note { font-size: .82rem; color: var(--muted); }
   .err { color: var(--danger); font-size: .85rem; min-height: 1.2em; }
 
+  /* home dashboard: a grid of cards you arrange */
+  .home-head { display: flex; align-items: baseline; gap: .6rem; margin-bottom: .8rem; }
+  .home-head h2 { margin: 0; }
+  .home-head .spacer { flex: 1; }
+  .grid-wrap { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: .9rem; }
+  .widget { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: .9rem; }
+  .widget.wide { grid-column: 1 / -1; }
+  .widget h3 { margin: 0 0 .5rem; font-size: .9rem; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .03em; }
+  .widget .big { font-size: 2rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .widget ul { list-style: none; margin: 0; padding: 0; }
+  .widget li { padding: .3rem 0; border-top: 1px solid var(--line); overflow-wrap: anywhere; }
+  .widget li:first-child { border-top: none; }
+  .widget .muted { color: var(--muted); font-size: .85rem; }
+  .widget-edit { margin-top: .7rem; display: flex; gap: .35rem; border-top: 1px dashed var(--line); padding-top: .6rem; }
+  .quickask { display: flex; gap: .4rem; }
+  .quickask input { flex: 1; }
+  .home.editing .widget { outline: 1px dashed var(--warn-line); }
+  .picker { display: flex; gap: .4rem; flex-wrap: wrap; margin-top: .8rem; }
+
   /* login / setup overlay */
   #gate { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; background: var(--bg); padding: 1rem; }
   #gate.active { display: flex; }
@@ -123,7 +142,8 @@
   <header id="topbar" hidden>
     <h1>Assistant</h1>
     <nav id="nav">
-      <button data-tab="thread" class="active" type="button">Chat</button>
+      <button data-tab="home" class="active" type="button">Home</button>
+      <button data-tab="thread" type="button">Chat</button>
       <button data-tab="locations" type="button">Locations</button>
       <button data-tab="settings" type="button">Settings</button>
       <button data-tab="schedules" type="button">Schedules</button>
@@ -135,6 +155,7 @@
   </header>
 
   <main>
+    <section class="panel active" id="home" aria-label="Home"></section>
     <div class="panel" id="thread" aria-live="polite">
       <div class="empty" id="empty">
         <p>Ask for something.</p>
@@ -498,7 +519,9 @@
     const memory = r.data.memory || {};
 
     const list = el("ul", { class: "items" });
-    Object.keys(prefs).forEach(function (k) {
+    // ui: keys hold interface state (the dashboard layout), not user preferences.
+    const prefKeys = Object.keys(prefs).filter(function (k) { return k.indexOf("ui:") !== 0; });
+    prefKeys.forEach(function (k) {
       const del = el("button", { class: "btn small danger", type: "button", text: "Delete" });
       del.addEventListener("click", async function () { await api("DELETE", "/api/settings/" + encodeURIComponent(k)); renderSettings(); });
       list.appendChild(el("li", null, [
@@ -506,7 +529,7 @@
         del,
       ]));
     });
-    if (!Object.keys(prefs).length) list.appendChild(el("li", { class: "note", text: "No preferences set." }));
+    if (!prefKeys.length) list.appendChild(el("li", { class: "note", text: "No preferences set." }));
 
     const key = el("input", { type: "text", placeholder: "key (e.g. units)" });
     const value = el("input", { type: "text", placeholder: "value (e.g. metric)" });
@@ -609,12 +632,151 @@
     ]));
   }
 
+  // ---- home dashboard: a grid of cards the user arranges ---------------
+  let currentUser = null;
+  let dashLayout = null;     // ordered list of widget keys; null until loaded
+  let editing = false;
+  let clockTimer = null;
+
+  const WIDGETS = {
+    clock:    { title: "Clock", render: renderClock },
+    quickask: { title: "Quick ask", wide: true, render: renderQuickAsk },
+    places:   { title: "Saved places", render: renderPlacesWidget },
+    routines: { title: "Upcoming routines", render: renderRoutinesWidget },
+    notes:    { title: "Assistant remembers", render: renderNotesWidget },
+  };
+  const DEFAULT_LAYOUT = ["clock", "quickask", "places", "routines"];
+
+  function layoutKey() { return "ui:layout:" + (currentUser || "_"); }
+  function stopClock() { if (clockTimer) { clearInterval(clockTimer); clockTimer = null; } }
+
+  async function loadLayout() {
+    const r = await api("GET", "/api/settings");
+    const all = (r.ok && r.data) ? (r.data.settings || {}) : {};
+    const saved = all[layoutKey()];
+    dashLayout = Array.isArray(saved) ? saved.filter(function (k) { return WIDGETS[k]; }) : null;
+    if (!dashLayout || !dashLayout.length) dashLayout = DEFAULT_LAYOUT.slice();
+  }
+  async function saveLayout() {
+    await api("PUT", "/api/settings/" + encodeURIComponent(layoutKey()), { value: dashLayout });
+  }
+  function moveWidget(i, delta) {
+    const j = i + delta;
+    if (j < 0 || j >= dashLayout.length) return;
+    const t = dashLayout[i]; dashLayout[i] = dashLayout[j]; dashLayout[j] = t;
+    saveLayout(); renderHome();
+  }
+
+  async function renderHome() {
+    const panel = $("home");
+    stopClock();
+    if (dashLayout === null) await loadLayout();
+    panel.className = "panel active home" + (editing ? " editing" : "");
+    panel.textContent = "";
+    panel.appendChild(el("div", { class: "home-head" }, [
+      el("h2", { text: "Home" }),
+      el("span", { class: "spacer" }),
+      el("button", { class: "btn small", type: "button", text: editing ? "Done" : "Customize",
+        onclick: function () { editing = !editing; renderHome(); } }),
+    ]));
+
+    const grid = el("div", { class: "grid-wrap" });
+    dashLayout.forEach(function (key, i) {
+      const def = WIDGETS[key];
+      if (!def) return;
+      const card = el("div", { class: "widget" + (def.wide ? " wide" : "") });
+      card.appendChild(el("h3", { text: def.title }));
+      def.render(card);
+      if (editing) {
+        card.appendChild(el("div", { class: "widget-edit" }, [
+          el("button", { class: "btn small", type: "button", text: "↑", onclick: function () { moveWidget(i, -1); } }),
+          el("button", { class: "btn small", type: "button", text: "↓", onclick: function () { moveWidget(i, 1); } }),
+          el("button", { class: "btn small danger", type: "button", text: "Remove",
+            onclick: function () { dashLayout.splice(i, 1); saveLayout(); renderHome(); } }),
+        ]));
+      }
+      grid.appendChild(card);
+    });
+    panel.appendChild(grid);
+
+    if (editing) {
+      const picker = el("div", { class: "picker" });
+      Object.keys(WIDGETS).forEach(function (key) {
+        if (dashLayout.indexOf(key) !== -1) return;
+        picker.appendChild(el("button", { class: "btn small", type: "button", text: "+ " + WIDGETS[key].title,
+          onclick: function () { dashLayout.push(key); saveLayout(); renderHome(); } }));
+      });
+      if (picker.children.length) {
+        panel.appendChild(el("p", { class: "muted", text: "Add a widget:" }));
+        panel.appendChild(picker);
+      }
+    }
+  }
+
+  function renderClock(card) {
+    const big = el("div", { class: "big" });
+    const date = el("div", { class: "muted" });
+    card.appendChild(big); card.appendChild(date);
+    const tick = function () {
+      const now = new Date();
+      big.textContent = now.toLocaleTimeString();
+      date.textContent = now.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
+    };
+    tick();
+    clockTimer = setInterval(tick, 1000);
+  }
+  function renderQuickAsk(card) {
+    const box = el("input", { type: "text", placeholder: "Ask the assistant..." });
+    const btn = el("button", { class: "btn primary", type: "button", text: "Ask" });
+    const go = function () {
+      const text = box.value.trim();
+      if (!text) return;
+      box.value = "";
+      selectTab("thread");
+      send(text);
+    };
+    btn.addEventListener("click", go);
+    box.addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); go(); } });
+    card.appendChild(el("div", { class: "quickask" }, [box, btn]));
+  }
+  async function renderPlacesWidget(card) {
+    const ul = el("ul"); card.appendChild(ul);
+    const r = await api("GET", "/api/locations");
+    const places = (r.ok && r.data.locations) || [];
+    if (!places.length) { ul.appendChild(el("li", { class: "muted", text: "No places saved." })); return; }
+    places.forEach(function (p) {
+      const where = (p.latitude != null) ? (p.latitude + ", " + p.longitude) : (p.address || "");
+      ul.appendChild(el("li", null, [el("strong", { text: p.label || p.name }), el("span", { class: "muted", text: "  " + where })]));
+    });
+  }
+  async function renderRoutinesWidget(card) {
+    const ul = el("ul"); card.appendChild(ul);
+    const r = await api("GET", "/api/schedules");
+    const rows = ((r.ok && r.data.schedules) || []).filter(function (s) { return s.enabled; });
+    if (!rows.length) { ul.appendChild(el("li", { class: "muted", text: "No routines." })); return; }
+    rows.slice(0, 6).forEach(function (s) {
+      const steps = (s.steps || []).map(function (st) { return st.module + "." + st.tool; }).join(", ");
+      ul.appendChild(el("li", null, [el("strong", { text: s.cron }), el("span", { class: "muted", text: "  " + steps })]));
+    });
+  }
+  async function renderNotesWidget(card) {
+    const ul = el("ul"); card.appendChild(ul);
+    const r = await api("GET", "/api/settings");
+    const memory = (r.ok && r.data.memory) || {};
+    const keys = Object.keys(memory);
+    if (!keys.length) { ul.appendChild(el("li", { class: "muted", text: "Nothing remembered yet." })); return; }
+    keys.forEach(function (k) {
+      ul.appendChild(el("li", null, [el("strong", { text: k }), el("span", { class: "muted", text: "  " + JSON.stringify(memory[k]) })]));
+    });
+  }
+
   // ---- tabs -------------------------------------------------------------
-  const renderers = { locations: renderLocations, settings: renderSettings, schedules: renderSchedules };
+  const renderers = { home: renderHome, locations: renderLocations, settings: renderSettings, schedules: renderSchedules };
   function selectTab(name) {
     document.querySelectorAll("nav button").forEach(function (b) { b.classList.toggle("active", b.dataset.tab === name); });
     document.querySelectorAll("main .panel").forEach(function (p) { p.classList.toggle("active", p.id === name); });
     $("composerBar").hidden = name !== "thread";
+    if (name !== "home") stopClock();
     if (renderers[name]) renderers[name]();
     if (name === "thread") input.focus();
   }
@@ -626,10 +788,13 @@
   const gate = $("gate"), gateBody = $("gateBody");
   function showApp(me) {
     signedOut = false;
+    currentUser = (me && me.username) || null;
+    dashLayout = null;   // reload this user's dashboard layout
+    editing = false;
     gate.classList.remove("active");
     $("topbar").hidden = false;
     if (me && me.username) { $("who").textContent = me.username; $("logout").hidden = false; }
-    selectTab("thread");
+    selectTab("home");
     startAssistant();
     connect();   // fresh socket, so a re-login reconnects instead of relying on the old loop
   }

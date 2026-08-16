@@ -80,8 +80,8 @@ The restart budget forgives history: a module that ran cleanly for `restart.rese
 failure count cleared. Without that, five unrelated blips spread over a year eventually add up to a dead
 module for no reason a human would accept.
 
-`unconfigured` exists so a module that is installed but missing its credentials shows up in the console
-as exactly that, rather than as a spawn failure that a person has to decode.
+`unconfigured` exists so a module that is installed but missing its credentials shows up in `vahub
+doctor` as exactly that, rather than as a spawn failure that a person has to decode.
 
 ### MCP client
 
@@ -158,16 +158,20 @@ confirmations, module state history, and daily token usage. The audit log is the
 a light comes on at night, it says whether the agent or the scheduler did it, with which arguments, and
 whether the gate allowed it.
 
-### Web API and console
+### Web API and the assistant
 
-REST plus a WebSocket for live events, and a small static console. The hub itself has no authentication;
-it binds to loopback and expects a proxy in front for anything else. State-changing routes and the
-WebSocket both check an `Origin` allowlist, because same-origin does not prevent another page from
-sending a cross-origin POST and does not apply to WebSockets at all.
+A small static page that is the assistant and nothing else: a chat box, a microphone button, and the
+prompt to confirm a destructive action. REST carries the chat and voice turns; a WebSocket carries one
+thing, the `policy.confirmation_required` event, so a held-back action appears without polling. There is
+no operator surface on the web: module state, stderr, the tool catalogue and the audit log are read with
+the CLI on the host. The hub itself has no authentication; it binds to loopback and expects a proxy in
+front for anything else. State-changing routes and the WebSocket both check an `Origin` allowlist,
+because same-origin does not prevent another page from sending a cross-origin POST and does not apply to
+WebSockets at all.
 
-The console renders module names, tool names, log lines and health payloads using `textContent`, never
-`innerHTML`. All of those strings originate in a module, which is exactly the kind of input that turns a
-status page into stored cross-site scripting.
+The page renders the assistant's replies and the module, tool and argument names inside a confirmation
+prompt using `textContent`, never `innerHTML`. A confirmation prompt quotes strings that originate in a
+module, which is exactly the kind of input that turns a page into stored cross-site scripting.
 
 ### Event bus
 
@@ -228,9 +232,10 @@ traces to stderr. So every topic has a bounded queue and one of two policies:
 | `drop_oldest` | Discard the oldest message, keep the subscriber, count the drop | High volume streams where recency is what matters: `module.log`, `conversation.message` |
 | `disconnect_slow` | Drop the **subscriber**, not the message, count it | Streams where a gap is misleading: `module.state_changed`, `tool.called`, `policy.confirmation_required`, `schedule.fired`, `budget.exceeded` |
 
-The reasoning behind `disconnect_slow`: a console that silently missed a state transition shows a module
-as `ready` when it is not, and nobody can tell. Cutting the socket is honest. The console reconnects,
-receives a fresh snapshot over REST, and is correct again. Losing a log line, by contrast, is
+The reasoning behind `disconnect_slow`: a subscriber that silently missed a `policy.confirmation_required`
+event leaves a destructive action waiting with nobody told to confirm it, and a state mirror that missed
+a transition records a module as `ready` when it is not. A gap there is misleading, so cutting the socket
+is the honest failure: the subscriber reconnects and is correct again. Losing a log line, by contrast, is
 unremarkable, so log topics drop instead.
 
 Both policies increment a dropped-messages counter, so the choice is visible in metrics rather than
@@ -277,18 +282,26 @@ cannot alter what runs, and the model cannot confirm its own request.
    and into the response.
 4. There is no model in this path at all.
 
-### A status update
+### A state change
 
 1. The supervisor changes a module's state, or drains a line from its stderr.
 2. It publishes to `module.state_changed` or `module.log`. The publish returns immediately regardless of
    how many consumers there are or how slow they are.
 3. A background task mirrors state changes into the database, so a post-mortem after a restart still
-   shows what happened.
-4. Each connected console has a subscription per topic, merged into a single queue and drained by a
-   single consumer, because concurrent sends on one WebSocket are not safe.
-5. On connect, the console first receives a full snapshot, then deltas. If it is dropped for being slow,
-   it reconnects and gets a new snapshot. There is no state that only exists as a delta.
-6. The page inserts every one of those strings as text, never as markup.
+   shows what happened, and `vahub doctor` and the `vahub_module_state` metric read the current value.
+4. None of this reaches the web. The assistant page subscribes to one topic only, and module state and
+   logs are operator information that stays on the host.
+
+### A confirmation
+
+1. A destructive call is stored with its arguments frozen, and a `policy.confirmation_required` event is
+   published.
+2. The assistant page, subscribed to that one topic, shows a prompt naming the module, the tool and the
+   arguments, each inserted as text and never as markup. Its subscription is drained by a single consumer,
+   because concurrent sends on one WebSocket are not safe.
+3. A person presses Confirm within `policy.confirm_ttl_s`. The hub executes the frozen arguments and
+   records the confirming subject as the principal. The conversation cannot alter what runs, and the
+   model cannot confirm its own request.
 
 ## Non-goals
 

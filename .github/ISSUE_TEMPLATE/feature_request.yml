@@ -8,7 +8,7 @@ body:
         A new capability (lights, calendars, transit, notifications) usually
         belongs in a module rather than in the hub. Use the module request
         template for those. This template is for the hub: the agent loop, the
-        policy gate, the supervisor, the scheduler, the web console, the CLI.
+        policy gate, the supervisor, the scheduler, the web interface, the CLI.
 
   - type: textarea
     id: problem
@@ -45,7 +45,7 @@ body:
         - policy gate and confirmations
         - module supervisor and MCP transport
         - scheduler
-        - web console and API
+        - web interface and API
         - CLI
         - speech (STT or TTS)
         - packaging and deployment

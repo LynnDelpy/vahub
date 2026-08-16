@@ -32,7 +32,7 @@ hub:
   modules_dir: /etc/vahub/modules.d
 
 # --------------------------------------------------------------------------
-# web: the HTTP API and the status page
+# web: the HTTP API and the assistant page
 # --------------------------------------------------------------------------
 web:
   # Loopback. The hub has no authentication of its own, so exposing it further
@@ -47,10 +47,6 @@ web:
   # browser, which behind a proxy is the proxy's. "*" turns the check off.
   origin_allowlist:
     - https://hub.example.lan:8443
-
-  # POST /api/dev/call runs a tool directly, without the agent. Still policy
-  # gated, but unauthenticated. Useful while writing a module, off otherwise.
-  dev_tools_endpoint: false
 
   # The header your authenticating proxy sets, recorded in the audit log as the
   # acting principal. It is information, never an authorization input, and the
@@ -164,10 +160,6 @@ policy:
     user:
       confirm: []
       deny: []
-    # The unauthenticated dev endpoint. Keep it narrow even in development.
-    dev:
-      confirm: []
-      deny: ["*.unlock_*"]
 
   # Rules are keyed "module.tool".
   #

@@ -422,9 +422,10 @@ class Supervisor:
         log.info("module_state_changed", module=mod.name, previous=old.value, state=new.value)
 
     def snapshot(self) -> list[dict[str, Any]]:
-        """A serialisable view for the status page and the CLI. Everything here
-        except the module's own name comes from the hub, not from the module,
-        with the exception of health/stderr, which callers must treat as text."""
+        """A serialisable view for the CLI (`vahub doctor`) and the state mirror.
+        Everything here except the module's own name comes from the hub, not from
+        the module, with the exception of health/stderr, which callers must treat
+        as text."""
         out: list[dict[str, Any]] = []
         for mod in sorted(self.modules.values(), key=lambda m: m.name):
             out.append(

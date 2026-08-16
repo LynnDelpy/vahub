@@ -22,7 +22,6 @@ def test_missing_file_yields_defaults(tmp_path: Path) -> None:
     assert cfg.web.port == 8080
     assert cfg.web.host == "127.0.0.1"  # loopback by default, exposure is deliberate
     assert cfg.policy.default == "deny"
-    assert cfg.web.dev_tools_endpoint is False
 
 
 def test_empty_file_is_not_an_error(write_config) -> None:
@@ -138,7 +137,7 @@ def test_interpolation_reaches_nested_lists(monkeypatch: pytest.MonkeyPatch) -> 
 
 
 def test_interpolation_leaves_non_strings_alone() -> None:
-    data = {"web": {"port": 8080, "dev_tools_endpoint": True, "origin_allowlist": None}}
+    data = {"web": {"port": 8080, "origin_allowlist": None}}
     assert interpolate(data) == data
 
 
@@ -153,12 +152,12 @@ def test_env_override_beats_the_file(write_config, monkeypatch: pytest.MonkeyPat
 
 
 def test_env_override_coerces_scalars(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    monkeypatch.setenv("VAHUB_WEB__DEV_TOOLS_ENDPOINT", "true")
+    monkeypatch.setenv("VAHUB_HUB__LOG_FORMAT", "console")
     monkeypatch.setenv("VAHUB_BUDGETS__WALL_CLOCK_TEXT_S", "2.5")
     monkeypatch.setenv("VAHUB_WEB__ORIGIN_ALLOWLIST", '["https://a.example"]')
     monkeypatch.setenv("VAHUB_BUDGETS__TOKENS_PER_DAY", "null")
     cfg = load_config(tmp_path / "absent.yaml")
-    assert cfg.web.dev_tools_endpoint is True
+    assert cfg.hub.log_format == "console"
     assert cfg.budgets.wall_clock_text_s == 2.5
     assert cfg.web.origin_allowlist == ["https://a.example"]
     assert cfg.budgets.tokens_per_day is None

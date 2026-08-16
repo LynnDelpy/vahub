@@ -38,7 +38,7 @@ if TYPE_CHECKING:
 Severity = Literal["error", "warning"]
 
 # Fields the documented health payload carries. Only `ok` is required; the rest
-# make a status page useful and their absence is worth mentioning, not failing.
+# make `vahub doctor` more useful and their absence is worth mentioning, not failing.
 HEALTH_FIELDS = ("backend", "latency_ms", "detail")
 
 DEFAULT_STARTUP_TIMEOUT_S = 20.0

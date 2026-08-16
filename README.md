@@ -16,7 +16,7 @@ Every action follows the same path, whether it started as speech, as typed text,
         |                                    (cron routines)
         v                                          |
   +----------------+                               |
-  |  web console   |                               |
+  | the assistant  |                               |
   | POST /api/chat |                               |
   +--------+-------+                               |
            |                                       |
@@ -103,9 +103,11 @@ Then run the hub and open <http://127.0.0.1:8080>.
 vahub run
 ```
 
-The console has a text box, a microphone button, the state of every module, a pending confirmations
-panel, and a log tail. There is no login: the hub binds to loopback by default, and putting it anywhere
-else means putting an authenticating reverse proxy in front of it. See
+The page is the assistant and nothing else: a text box, a microphone button, and a panel that appears
+when a destructive action is waiting for you to confirm it. It is meant to be handed to whoever lives
+in the house. Module state, stderr and the audit log are not on the web; they are read with the CLI on
+the host (`vahub doctor`, `vahub audit`). There is no login: the hub binds to loopback by default, and
+putting it anywhere else means putting an authenticating reverse proxy in front of it. See
 [docs/security.md](docs/security.md).
 
 A fresh `vahub.yaml` has `policy.default: deny` and no rules, so the assistant can talk but cannot do
@@ -143,7 +145,7 @@ Now the same conversation against a lock:
 
 ```
 you    unlock the front door
-vahub  That needs confirmation. I have queued it; confirm it on the console.
+vahub  That needs confirmation. I have queued it; confirm it on the page.
 ```
 
 `lock_unlock` is classed `destructive`, so the gate does not dispatch it. It stores the call with its
@@ -248,7 +250,7 @@ Read this before you point it at anything that matters.
 * **Principals are roles, not accounts.** `agent`, `scheduler` and a confirming human are different
   principals, but there is no per-person policy and no user database.
 * **Policy rules are written by hand.** Installing a module does not generate rules for it, and there is
-  no editor for them in the console. This is deliberate for now: the file is the boundary, so it should
+  no editor for them on the web. This is deliberate for now: the file is the boundary, so it should
   be read and understood, not clicked together.
 * **Conversation memory is shallow.** The working context of a session lives in memory and is trimmed to
   the recent turns; it resets when the hub restarts. Messages are persisted for the record, not replayed

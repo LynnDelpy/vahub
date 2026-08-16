@@ -1,15 +1,15 @@
-"""The ASGI application: routers, probes, and the console page.
+"""The ASGI application: routers, probes, and the assistant page.
 
 Two decisions worth stating.
 
 * The interactive API docs are switched off. Swagger UI loads its assets from a
-  public CDN, which would both break an offline LAN install and make the console
-  page talk to the internet; neither is acceptable for a hub that controls locks
-  and lights.
-* The console is served with a per-response CSP nonce rather than
-  `script-src 'unsafe-inline'`. The page is a single self-contained file with an
+  public CDN, which would both break an offline LAN install and make the
+  assistant page talk to the internet; neither is acceptable for a hub that
+  controls locks and lights.
+* The page is served with a per-response CSP nonce rather than
+  `script-src 'unsafe-inline'`. It is a single self-contained file with an
   inline script, and a nonce keeps the "no injected script can run" property that
-  the rest of the console's rendering rules are built on.
+  the page's rendering rules are built on.
 
 `/health` answers as long as the process is up. `/ready` is stricter: it reports
 not-ready while any module is still in its first handshake, which is what a load
@@ -28,7 +28,6 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response
 from ..__about__ import __version__
 from ..core import metrics
 from . import api, ws
-from .api import state_value
 
 if TYPE_CHECKING:
     from ..core.runtime import Runtime
@@ -37,8 +36,8 @@ STATIC_DIR = Path(__file__).parent / "static"
 INDEX_FILE = STATIC_DIR / "index.html"
 NONCE_PLACEHOLDER = "__CSP_NONCE__"
 
-# Applied to every response. The console overrides Content-Security-Policy with
-# its own, looser, policy; everything else is JSON that needs nothing at all.
+# Applied to every response. The assistant page overrides Content-Security-Policy
+# with its own, looser, policy; everything else is JSON that needs nothing at all.
 _BASE_HEADERS = {
     "X-Content-Type-Options": "nosniff",
     "Referrer-Policy": "no-referrer",
@@ -83,18 +82,19 @@ def create_app(rt: Runtime) -> FastAPI:
 
     @app.get("/ready")
     async def ready() -> JSONResponse:
-        counts: dict[str, int] = {}
-        for module in rt.supervisor.modules.values():
-            state = state_value(module.state)
-            counts[state] = counts.get(state, 0) + 1
-        # A module that is still starting has not finished its handshake, so its
-        # tools do not exist yet. Everything else, including failed, is settled:
-        # the hub is up and reports the failure rather than hiding behind 503.
-        settled = counts.get("starting", 0) == 0
-        return JSONResponse(
-            {"ready": settled, "modules": counts},
-            status_code=200 if settled else 503,
+        # For an orchestrator deciding whether to send traffic. A module that is
+        # still starting has not finished its handshake, so its tools do not
+        # exist yet. Everything else, including failed, is settled: the hub is up
+        # and says so rather than hiding behind 503.
+        #
+        # The answer is a bare boolean on purpose. Which modules exist and what
+        # state each is in is operator information, and this endpoint is reachable
+        # by anyone who can reach the hub.
+        settled = not any(
+            str(getattr(m.state, "value", m.state)) == "starting"
+            for m in rt.supervisor.modules.values()
         )
+        return JSONResponse({"ready": settled}, status_code=200 if settled else 503)
 
     @app.get("/metrics")
     async def prometheus() -> Response:

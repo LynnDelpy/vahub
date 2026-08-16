@@ -1,4 +1,9 @@
-"""The live event stream the console listens on.
+"""The live event stream the assistant page listens on.
+
+It carries one thing: the `policy.confirmation_required` event, so a held-back
+destructive action appears without the page having to poll. Everything else on
+the bus (module state, module stderr) is operator information and stays on the
+host.
 
 Three decisions that are not obvious from the code:
 
@@ -6,11 +11,11 @@ Three decisions that are not obvious from the code:
   two tasks writing frames interleave and corrupt the stream. Every subscription
   is therefore merged into a single queue with one consumer.
 * Subscriptions are released on every exit path, including a failure of the very
-  first snapshot send. A leaked subscription is a queue the bus keeps filling for
-  the lifetime of the process.
+  first send. A leaked subscription is a queue the bus keeps filling for the
+  lifetime of the process.
 * When the bus drops a subscriber (its `disconnect_slow` policy), the socket is
-  closed rather than continued. A console that silently missed events is worse
-  than one that reconnects and reloads its state over REST.
+  closed rather than continued. A page that silently missed a confirmation event
+  is worse than one that reconnects.
 """
 
 from __future__ import annotations
@@ -21,25 +26,18 @@ from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
-from .api import module_view
 from .security import websocket_origin_allowed
 
 if TYPE_CHECKING:
     from ..core.runtime import Runtime
 
-# Bus topic -> the short kind the console switches on.
-TOPICS: tuple[tuple[str, str], ...] = (
-    ("module.state_changed", "state"),
-    ("module.log", "log"),
-    ("policy.confirmation_required", "confirm"),
-    ("schedule.fired", "schedule"),
-    ("budget.exceeded", "budget"),
-)
+# Bus topic -> the short kind the assistant page switches on.
+# Only what the person talking to the assistant needs. Module states and module
+# stderr are operator concerns: they belong in the service log and in the CLI,
+# not in a page that may be handed to someone who just wants to ask a question.
+TOPICS: tuple[tuple[str, str], ...] = (("policy.confirmation_required", "confirm"),)
 
 MERGED_MAXSIZE = 1024
-# A module controls its own stderr. Truncating here keeps one pathological line
-# from being pushed at every open console.
-MAX_LOG_LINE_CHARS = 2_000
 
 
 async def _feed(sub: Any, kind: str, merged: asyncio.Queue) -> None:
@@ -67,19 +65,10 @@ async def _drain_client(websocket: WebSocket) -> None:
             return
 
 
-def _shrink(kind: str, event: Any) -> Any:
-    if kind != "log" or not isinstance(event, dict):
-        return event
-    line = event.get("line")
-    if isinstance(line, str) and len(line) > MAX_LOG_LINE_CHARS:
-        return {**event, "line": line[:MAX_LOG_LINE_CHARS] + " ...[truncated]"}
-    return event
-
-
 async def _send_loop(websocket: WebSocket, merged: asyncio.Queue) -> None:
     while True:
         kind, event = await merged.get()
-        await websocket.send_json({"type": kind, "data": _shrink(kind, event)})
+        await websocket.send_json({"type": kind, "data": event})
 
 
 def build_router(rt: Runtime) -> APIRouter:
@@ -100,12 +89,7 @@ def build_router(rt: Runtime) -> APIRouter:
         try:
             subs = [(rt.bus.subscribe(topic), kind) for topic, kind in TOPICS]
             merged: asyncio.Queue = asyncio.Queue(maxsize=MERGED_MAXSIZE)
-            await websocket.send_json(
-                {
-                    "type": "snapshot",
-                    "modules": [module_view(m) for m in rt.supervisor.modules.values()],
-                }
-            )
+            await websocket.send_json({"type": "ready"})
             tasks = [asyncio.create_task(_feed(sub, kind, merged)) for sub, kind in subs]
             tasks.append(asyncio.create_task(_send_loop(websocket, merged)))
             tasks.append(asyncio.create_task(_drain_client(websocket)))

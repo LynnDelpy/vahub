@@ -1,11 +1,12 @@
-# Developer overlay. Never use it on a machine you care about: it turns on an
-# unauthenticated endpoint that calls tools directly.
+# Developer overlay. Never use it on a machine you care about: it publishes the
+# hub on loopback with no proxy and no authentication in front of it.
 #
 #   docker compose -f docker-compose.yml -f docker-compose.dev.yml up vahub
 #
 # Naming `vahub` starts the hub alone, without the proxy: with the port on
 # loopback there is nothing for TLS to protect, and skipping the proxy means you
-# do not need certificates to get started.
+# do not need certificates to get started. To exercise a module you are building,
+# `vahub module verify` and `vahub doctor` run against the container.
 #
 # It still reads ./vahub.yaml; `cp ../../examples/vahub.minimal.yaml ./vahub.yaml`
 # is enough to get a first run with the mock model.
@@ -19,10 +20,6 @@ services:
       - ../../src:/src:ro
     environment:
       PYTHONPATH: /src
-      # /api/dev/call executes a tool without the agent. It is still policy
-      # gated, but it is unauthenticated, which is exactly why it is off in the
-      # production file and exposed on loopback only here.
-      VAHUB_WEB__DEV_TOOLS_ENDPOINT: "true"
       VAHUB_HUB__LOG_LEVEL: DEBUG
       VAHUB_HUB__LOG_FORMAT: console
       VAHUB_WEB__ORIGIN_ALLOWLIST: '["http://localhost:${VAHUB_DEV_PORT:-8080}","http://127.0.0.1:${VAHUB_DEV_PORT:-8080}"]'

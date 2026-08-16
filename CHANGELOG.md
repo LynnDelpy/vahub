@@ -40,8 +40,10 @@ First release.
   gate as its own principal.
 * A SQLite store holding conversations, pending confirmations and an audit
   record of every tool call, including the ones that were refused.
-* A web console with a chat view, module status, the audit trail and the
-  confirmation prompts, plus a JSON API and a Prometheus endpoint.
+* A web interface that is only the assistant: a chat view, speech in and out,
+  and the prompt to confirm a destructive action. Module state, stderr, the tool
+  catalogue and the audit log are not served over HTTP; they are read with the
+  CLI on the host. Alongside it, a small JSON API and a Prometheus endpoint.
 * Speech input and output, either in the browser or through an OpenAI compatible
   transcription and synthesis endpoint.
 * A single configuration file with strict validation, `${VAR}` and
@@ -52,8 +54,8 @@ First release.
 
 ### Security
 
-* The gate is enforced in code on the path that the agent, the scheduler and the
-  development endpoint all share. A manifest cannot grant its own module
+* The gate is enforced in code on the path that the agent, the scheduler and a
+  confirmed destructive action all share. A manifest cannot grant its own module
   permission; only `vahub.yaml` authorizes.
 * A module process receives only the environment variables its manifest
   declares, never the hub's environment, so one module's credential is not
@@ -65,7 +67,7 @@ First release.
   call's result.
 * Untrusted module output is guarded rather than trusted: a result that is not
   an object is an error, not an exception, and module controlled strings are
-  inserted into the console as text and never as markup.
+  inserted into the page as text and never as markup.
 * Arguments listed under a manifest's `audit.redact` are masked before the audit
   record is written.
 * The web interface binds to loopback by default, checks the browser origin on

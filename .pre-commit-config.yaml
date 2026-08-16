@@ -51,9 +51,9 @@ repos:
         entry: 'shell\s*=\s*True'
 
       # Module output is untrusted text. Interpolating it into HTML is how a
-      # module that the operator merely installed ends up scripting the console.
+      # module that the operator merely installed ends up scripting the page.
       - id: no-html-interpolation
-        name: no HTML interpolation in the console
+        name: no HTML interpolation in the assistant page
         language: pygrep
         files: ^src/vahub/web/.*\.(js|html)$
         entry: '(\.innerHTML\s*=.*(\$\{|\+)|insertAdjacentHTML)'

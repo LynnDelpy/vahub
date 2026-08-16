@@ -538,10 +538,12 @@ def _starter_policy(modules: dict[str, Manifest]) -> dict[str, Any]:
     return {
         "default": "deny",
         "confirm_ttl_s": 60.0,
+        # The three principals that actually act: the agent, the scheduler and
+        # the development endpoint. A principal can only subtract or escalate,
+        # so listing one that never appears would be decoration.
         "principals": {
             "agent": {"confirm": ["write", "destructive"], "deny": []},
             "scheduler": {"confirm": ["destructive"], "deny": ["*.lock_*", "*.unlock_*", "*.delete_*"]},
-            "user": {"confirm": ["destructive"], "deny": []},
             "dev": {"confirm": ["destructive"], "deny": []},
         },
         "rules": rules,
@@ -602,7 +604,6 @@ def _render_config(
                 "host": web["host"],
                 "port": web["port"],
                 "origin_allowlist": web["origin_allowlist"],
-                "dev_tools_endpoint": False,
             },
         ),
         (f"# api_key is a reference, not the key. The value lives in {layout.secrets_path}.\n"

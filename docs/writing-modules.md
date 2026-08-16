@@ -313,21 +313,24 @@ module seems invisible, check the policy before you check your code.
 
 ### 7. Try it
 
-```bash
-vahub run                      # in another terminal, or systemctl start vahub
-curl -s localhost:8080/api/modules | python3 -m json.tool
-```
-
-With `web.dev_tools_endpoint: true` you can call a tool directly, without the agent and
-without spending model tokens. It still goes through the gate, as principal `dev`.
+Verify the module against the contract before installing it. This spawns it, does the MCP
+handshake, checks the reserved `__health` tool and every tool's schema, and confirms stdout
+carries only JSON-RPC:
 
 ```bash
-curl -s -X POST localhost:8080/api/dev/call \
-  -H 'content-type: application/json' \
-  -d '{"module":"tasks","tool":"list_tasks","args":{"limit":3}}' | python3 -m json.tool
+vahub module verify --source ./vahub-mod-tasks
 ```
 
-Turn that endpoint off again when you are done. It is unauthenticated.
+Then install it and ask the assistant. `vahub doctor` reports whether each declared tool has
+a policy rule, which is the most common reason a new module appears to do nothing:
+
+```bash
+vahub module add --source ./vahub-mod-tasks
+vahub doctor
+```
+
+A tool is exercised the way it will really be used, through the assistant, so you also see
+whether the description reads clearly enough for the model to choose it.
 
 ## The manifest, field by field
 
@@ -672,7 +675,8 @@ subprocess or the hub to assert that `list_tasks(limit=100)` returns at most 25 
 
 `vahub doctor` reports module state and any manifest or policy problem, including tools
 that exist but have no policy rule, which is the most common reason a new module appears to
-do nothing. For live calls, use the dev endpoint shown earlier.
+do nothing. For a live call, run `vahub module verify` or install the module and ask the
+assistant to use it.
 
 ## Publishing
 

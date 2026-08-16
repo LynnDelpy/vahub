@@ -122,8 +122,7 @@ It reports on:
   expressions,
 * the language model configuration: provider, base URL, whether a key is present. It does
   not spend a request to check the key,
-* whether the web server is bound to a non loopback address without a proxy in front, and
-  whether `web.dev_tools_endpoint` is on.
+* whether the web server is bound to a non loopback address without a proxy in front.
 
 Findings are printed as errors or warnings. The exit code is `1` if there is at least one
 error, `0` if there are only warnings.
@@ -164,7 +163,7 @@ version, description, the declared tools with their classes, and its configurati
 
 This reads manifests, so it works whether or not the hub is running. It reports what is
 installed and configured, not live process state. Live state (`ready`, `degraded`,
-`failed`) comes from `vahub doctor`, the web console, or `GET /api/modules`.
+`failed`) comes from `vahub doctor`.
 
 | option | meaning |
 |---|---|

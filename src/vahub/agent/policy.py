@@ -1,8 +1,8 @@
 """The policy gate. Default deny, consulted on every tool call.
 
 This is a security boundary in code, not in the prompt. It sits in front of the
-module API, so the agent, the scheduler and the dev endpoint all pass through the
-same check regardless of what the model believes it is allowed to do.
+module API, so the agent, the scheduler and a confirmed destructive action all
+pass through the same check regardless of what the model believes it is allowed to do.
 
 Two decisions are worth knowing about:
 

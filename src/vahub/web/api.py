@@ -1,4 +1,11 @@
-"""The REST surface: what the console and any script drive the hub with.
+"""The REST surface, which is the assistant and nothing else.
+
+Asking something, speaking something, and approving an action that was held back
+for a person. There is deliberately no way here to read module states, module
+stderr, the tool catalogue or the audit log, and no way to invoke a tool
+directly: those are for whoever runs the service, who has the CLI and the
+service log. A page that may be handed to someone who just wants to ask a
+question should not also be a debugger.
 
 Two properties hold everywhere in this file.
 
@@ -17,10 +24,9 @@ audit log and is never an authorization input.
 from __future__ import annotations
 
 import base64
-import json
 from typing import TYPE_CHECKING, Any
 
-from fastapi import APIRouter, File, Form, HTTPException, Path, Query, Request, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Path, Request, UploadFile
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
@@ -32,14 +38,8 @@ if TYPE_CHECKING:
 # Bounds. They are deliberately generous for a human at a console and still small
 # enough that a hostile client cannot make the hub allocate without limit.
 MAX_MESSAGE_CHARS = 8_000
-MAX_ARGS_BYTES = 8_192
-MAX_TIMEOUT_S = 60.0
 MAX_AUDIO_BYTES = 8 * 1024 * 1024
-MAX_LOG_LINES = 500
-MAX_AUDIT_ROWS = 500
 
-_MODULE_NAME_PATTERN = r"^[a-z][a-z0-9_-]{0,63}$"
-_TOOL_NAME_PATTERN = r"^[a-zA-Z_][a-zA-Z0-9_]{0,63}$"
 _SESSION_ID_PATTERN = r"^[A-Za-z0-9_-]{1,64}$"
 _PENDING_ID_PATTERN = r"^[0-9a-fA-F]{8,64}$"
 
@@ -47,35 +47,6 @@ _PENDING_ID_PATTERN = r"^[0-9a-fA-F]{8,64}$"
 class ChatTurn(BaseModel):
     message: str = Field(min_length=1, max_length=MAX_MESSAGE_CHARS)
     session_id: str | None = Field(default=None, pattern=_SESSION_ID_PATTERN)
-
-
-class DevCall(BaseModel):
-    module: str = Field(pattern=_MODULE_NAME_PATTERN)
-    tool: str = Field(pattern=_TOOL_NAME_PATTERN)
-    args: dict[str, Any] = Field(default_factory=dict)
-    timeout_s: float = Field(10.0, gt=0, le=MAX_TIMEOUT_S)
-
-
-def state_value(state: Any) -> str:
-    # The supervisor's state is an enum whose value is the string the API and the
-    # console use; accept a plain string too so the view never depends on it.
-    return str(getattr(state, "value", state) or "")
-
-
-def module_view(mod: Any) -> dict[str, Any]:
-    """The public shape of one module. Shared with the WebSocket snapshot."""
-    manifest = mod.manifest
-    tools = [t.get("name") for t in mod.tools if isinstance(t, dict)]
-    return {
-        "name": manifest.name,
-        "version": manifest.version,
-        "description": manifest.description,
-        "state": state_value(mod.state),
-        "last_error": mod.last_error,
-        "health": mod.health if isinstance(mod.health, dict) else {"raw": mod.health},
-        "tools": [str(name) for name in tools if isinstance(name, str)],
-        "restarts": mod.restarts,
-    }
 
 
 def _as_dict(result: Any, fallback_error: str) -> dict[str, Any]:
@@ -115,29 +86,9 @@ def build_router(rt: Runtime) -> APIRouter:
             {
                 "stt_provider": speech.stt.provider,
                 "tts_provider": speech.tts.provider,
-                "dev_tools_endpoint": rt.config.web.dev_tools_endpoint,
                 "timezone": rt.config.hub.timezone,
             }
         )
-
-    @router.get("/modules")
-    async def modules() -> JSONResponse:
-        return JSONResponse([module_view(m) for m in rt.supervisor.modules.values()])
-
-    @router.get("/modules/{name}/logs")
-    async def module_logs(
-        name: str = Path(pattern=_MODULE_NAME_PATTERN),
-        limit: int = Query(200, ge=1, le=MAX_LOG_LINES),
-    ) -> JSONResponse:
-        mod = rt.supervisor.modules.get(name)
-        if mod is None:
-            raise HTTPException(status_code=404, detail="unknown module")
-        lines = [str(line) for line in mod.stderr_ring][-limit:]
-        return JSONResponse({"module": name, "lines": lines})
-
-    @router.get("/tools")
-    async def tools() -> JSONResponse:
-        return JSONResponse(rt.registry.list_tools())
 
     @router.post("/chat")
     async def chat(turn: ChatTurn, request: Request) -> JSONResponse:
@@ -156,7 +107,7 @@ def build_router(rt: Runtime) -> APIRouter:
         check_origin(request, rt.config)
         if rt.config.speech.stt.provider != "openai_compat":
             # No server-side model is configured, so there is nothing to send the
-            # audio to. The console falls back to the browser's own recognition.
+            # audio to. The page falls back to the browser's own recognition.
             return JSONResponse(
                 {
                     "ok": False,
@@ -214,48 +165,7 @@ def build_router(rt: Runtime) -> APIRouter:
         result = await rt.moduleapi.confirm(pending_id, subject=subject)
         return JSONResponse(_as_dict(result, "confirm_error"))
 
-    @router.get("/audit")
-    async def audit(limit: int = Query(200, ge=1, le=MAX_AUDIT_ROWS)) -> JSONResponse:
-        return JSONResponse(await rt.store.recent_tool_calls(limit=limit))
-
-    @router.get("/schedules")
-    async def schedules() -> JSONResponse:
-        return JSONResponse(rt.scheduler.list_schedules())
-
-    @router.post("/schedules/{schedule_id}/run")
-    async def run_schedule(
-        request: Request,
-        schedule_id: str = Path(max_length=64),
-    ) -> JSONResponse:
-        # A routine runs with the scheduler principal, which is usually allowed to
-        # act unattended. Triggering that from an unauthenticated request is a
-        # development affordance, so it shares the dev endpoint's switch.
-        if not rt.config.web.dev_tools_endpoint:
-            raise HTTPException(status_code=403, detail="dev tools endpoint disabled")
-        check_origin(request, rt.config)
-        result = await rt.scheduler.run_schedule(schedule_id)
-        return JSONResponse(_as_dict(result, "schedule_error"))
-
-    @router.post("/dev/call")
-    async def dev_call(call: DevCall, request: Request) -> JSONResponse:
-        # Calls one tool without the agent. The policy gate still applies (the
-        # call goes through the same ModuleAPI as everything else), but the route
-        # is unauthenticated, so it stays off unless it was turned on.
-        if not rt.config.web.dev_tools_endpoint:
-            raise HTTPException(status_code=403, detail="dev tools endpoint disabled")
-        check_origin(request, rt.config)
-        if len(json.dumps(call.args, default=str)) > MAX_ARGS_BYTES:
-            raise HTTPException(status_code=413, detail="args too large")
-        result = await rt.moduleapi.call(
-            module=call.module,
-            tool=call.tool,
-            args=call.args,
-            timeout_s=call.timeout_s,
-            principal="dev",
-        )
-        return JSONResponse(_as_dict(result, "call_error"))
-
     return router
 
 
-__all__ = ["build_router", "module_view", "state_value"]
+__all__ = ["build_router"]

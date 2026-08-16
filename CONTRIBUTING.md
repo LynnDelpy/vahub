@@ -53,7 +53,7 @@ uv run pytest
 
 `pre-commit` runs the first two automatically, fixes what it can, and adds a few
 cheap guards: no private keys, no strings that look like live credentials, no
-`shell=True`, no HTML interpolation in the console assets. Run it over
+`shell=True`, no HTML interpolation in the assistant page assets. Run it over
 everything once with `uv run pre-commit run --all-files`, and update the pinned
 hook versions with `uv run pre-commit autoupdate`.
 

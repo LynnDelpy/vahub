@@ -333,28 +333,11 @@ def exposure_checks(config: Config) -> list[Check]:
     else:
         checks.append(Check("Exposure", "origin allowlist", "ok", ", ".join(web.origin_allowlist)))
 
-    if web.dev_tools_endpoint:
-        checks.append(
-            Check(
-                "Exposure", "dev tools endpoint",
-                "warn" if loopback else "fail",
-                "enabled",
-                "it calls tools without the agent and without authentication; "
-                "turn it off outside development",
-            )
-        )
-    else:
-        checks.append(Check("Exposure", "dev tools endpoint", "ok", "disabled"))
-
-    if not loopback and (wildcard or web.dev_tools_endpoint):
-        opened = [
-            text for text, on in
-            (("origin '*'", wildcard), ("the dev endpoint", web.dev_tools_endpoint)) if on
-        ]
+    if not loopback and wildcard:
         checks.append(
             Check(
                 "Exposure", "combination", "fail",
-                f"bound to {web.host} with {' and '.join(opened)}",
+                f"bound to {web.host} with origin '*'",
                 "put an authenticating reverse proxy in front, or bind to 127.0.0.1",
             )
         )

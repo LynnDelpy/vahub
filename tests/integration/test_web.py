@@ -94,7 +94,7 @@ async def test_metrics_are_exposed_in_prometheus_format(client) -> None:
 async def test_reads_do_not_require_an_origin(client) -> None:
     # GET routes change nothing, so refusing them on Origin would only break
     # legitimate scripts.
-    assert (await client.get("/api/modules", headers={"origin": HOSTILE_ORIGIN})).status_code == 200
+    assert (await client.get("/api/pending", headers={"origin": HOSTILE_ORIGIN})).status_code == 200
 
 
 # --------------------------------------------------------------------------
@@ -148,118 +148,37 @@ def test_a_websocket_from_an_allowed_origin_receives_the_snapshot(app) -> None:
         "/ws/events", headers={"origin": ALLOWED_ORIGIN}
     ) as socket:
         message = socket.receive_json()
-    assert message["type"] == "snapshot"
-    assert message["modules"] == []
+    # The socket exists to deliver approval prompts, not module telemetry.
+    assert message["type"] == "ready"
+    assert "modules" not in message
 
 
 # --------------------------------------------------------------------------
-# the dev endpoint
+# the operator surface must stay off the web
 # --------------------------------------------------------------------------
-async def test_the_dev_endpoint_is_off_by_default(client) -> None:
-    response = await client.post(
-        "/api/dev/call",
-        json={"module": "fake", "tool": "echo", "args": {}},
-        headers={"origin": ALLOWED_ORIGIN},
-    )
-    assert response.status_code == 403
-
-
-@pytest.mark.parametrize("runtime", [{"dev_tools_endpoint": True}], indirect=True)
-async def test_the_dev_endpoint_still_goes_through_the_call_path(client) -> None:
-    response = await client.post(
-        "/api/dev/call",
-        json={"module": "fake", "tool": "echo", "args": {}},
-        headers={"origin": ALLOWED_ORIGIN},
-    )
-    # No module is installed, so the answer is a structured error rather than a
-    # crash, and it arrived through ModuleAPI like every other call.
-    assert response.status_code == 200
-    assert response.json() == {"ok": False, "error": "unknown_module", "detail": "fake"}
-
-
-@pytest.mark.parametrize("runtime", [{"dev_tools_endpoint": True}], indirect=True)
-async def test_the_dev_endpoint_rejects_a_malformed_module_name(client) -> None:
-    response = await client.post(
-        "/api/dev/call",
-        json={"module": "../../etc", "tool": "echo"},
-        headers={"origin": ALLOWED_ORIGIN},
-    )
-    assert response.status_code == 422
-
-
-@pytest.mark.parametrize("runtime", [{"dev_tools_endpoint": True}], indirect=True)
-async def test_oversized_arguments_are_refused(client) -> None:
-    response = await client.post(
-        "/api/dev/call",
-        json={"module": "fake", "tool": "echo", "args": {"blob": "x" * 20_000}},
-        headers={"origin": ALLOWED_ORIGIN},
-    )
-    assert response.status_code == 413
-
-
-# --------------------------------------------------------------------------
-# chat
-# --------------------------------------------------------------------------
-async def test_chat_answers_with_the_mock_model(client) -> None:
-    response = await client.post(
-        "/api/chat", json={"message": "hello"}, headers={"origin": ALLOWED_ORIGIN}
-    )
-    body = response.json()
-    assert response.status_code == 200
-    assert body["session_id"]
-    assert isinstance(body["reply"], str) and body["reply"]
-    assert body["steps"] == []  # no modules are installed, so nothing was called
-
-
-async def test_chat_keeps_a_session(client) -> None:
-    first = (
-        await client.post("/api/chat", json={"message": "hello"}, headers={"origin": ALLOWED_ORIGIN})
-    ).json()
-    second = (
-        await client.post(
-            "/api/chat",
-            json={"message": "again", "session_id": first["session_id"]},
-            headers={"origin": ALLOWED_ORIGIN},
-        )
-    ).json()
-    assert second["session_id"] == first["session_id"]
-
-
-async def test_an_empty_message_is_refused(client) -> None:
-    response = await client.post(
-        "/api/chat", json={"message": ""}, headers={"origin": ALLOWED_ORIGIN}
-    )
-    assert response.status_code == 422
-
-
-async def test_an_oversized_message_is_refused(client) -> None:
-    response = await client.post(
-        "/api/chat", json={"message": "x" * 20_000}, headers={"origin": ALLOWED_ORIGIN}
-    )
-    assert response.status_code == 422
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/api/dev/call",      # executing a tool without the agent
+        "/api/modules",       # module states
+        "/api/modules/fake/logs",  # module stderr
+        "/api/tools",         # the tool catalogue
+        "/api/audit",         # the audit log
+        "/api/schedules",     # routines
+    ],
+)
+async def test_operator_routes_are_not_exposed(client, path: str) -> None:
+    """This page is handed to whoever wants to ask the assistant something. It
+    is not a debugger: module telemetry, stderr and direct tool invocation are
+    reachable through the CLI on the host, and nowhere else."""
+    for method in ("get", "post"):
+        response = await getattr(client, method)(path, headers={"origin": ALLOWED_ORIGIN})
+        assert response.status_code in (404, 405), f"{method.upper()} {path} answered {response.status_code}"
 
 
 # --------------------------------------------------------------------------
 # reads
 # --------------------------------------------------------------------------
-async def test_module_listing_is_empty_without_modules(client) -> None:
-    assert (await client.get("/api/modules")).json() == []
-
-
-async def test_logs_for_an_unknown_module_are_a_404(client) -> None:
-    assert (await client.get("/api/modules/nope/logs")).status_code == 404
-
-
-async def test_the_tool_catalog_is_json(client) -> None:
-    assert (await client.get("/api/tools")).json() == []
-
-
-async def test_the_audit_log_is_readable(client) -> None:
-    response = await client.get("/api/audit")
-    assert response.status_code == 200
-    assert isinstance(response.json(), list)
-
-
 async def test_confirming_an_unknown_id_is_not_an_error_page(client) -> None:
     response = await client.post("/api/confirm/" + "b" * 32, headers={"origin": ALLOWED_ORIGIN})
     assert response.status_code == 200
@@ -286,7 +205,7 @@ async def test_the_console_never_renders_module_text_as_html(client) -> None:
 
 
 async def test_responses_carry_the_hardening_headers(client) -> None:
-    headers = (await client.get("/api/modules")).headers
+    headers = (await client.get("/api/pending")).headers
     assert headers["x-content-type-options"] == "nosniff"
     assert headers["x-frame-options"] == "DENY"
     assert "frame-ancestors 'none'" in headers["content-security-policy"]

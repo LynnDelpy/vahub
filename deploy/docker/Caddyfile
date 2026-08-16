@@ -41,10 +41,11 @@ https://{$VAHUB_DOMAIN:localhost}:8443 {
 		format json
 	}
 
-	# /api/dev/call runs a tool without the agent and without authentication of
-	# its own. It has no business being reachable from outside; developers reach
-	# it on loopback through the dev compose overlay instead.
-	handle /api/dev/* {
+	# Defence in depth. The hub exposes only the assistant (chat, voice, approvals);
+	# operator paths do not exist. Anything under these prefixes is refused here too,
+	# so a future regression cannot quietly put a debugger on the network.
+	@operator path /api/dev/* /api/modules* /api/audit /api/tools /api/schedules*
+	handle @operator {
 		respond 404
 	}
 

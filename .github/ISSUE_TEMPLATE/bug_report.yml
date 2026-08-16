@@ -31,7 +31,7 @@ body:
         1. vahub init
         2. vahub module add time
         3. vahub run
-        4. ask "what time is it" in the console
+        4. ask "what time is it" on the assistant page
     validations:
       required: true
 
@@ -80,7 +80,7 @@ body:
       label: Logs
       description: >
         The hub log around the failure, and the matching audit entries from
-        `/api/audit` if a tool call is involved. Check for credentials before
+        `vahub audit` if a tool call is involved. Check for credentials before
         you paste.
       render: text
 

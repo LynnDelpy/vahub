@@ -129,9 +129,11 @@ default bind address is loopback.
   is acting; it is written to the audit log and never used as an authorization
   input, because a header is trivially forged by anyone who reaches the port
   directly.
-* **`web.dev_tools_endpoint`.** It executes a tool without the agent. It is
-  still gated, and it is still unauthenticated. It defaults to off and belongs
-  on a development machine only.
+* **Operator surface on the host, not the web.** The web surface is only the
+  assistant. Module state, module stderr, the tool catalogue and the audit log
+  are read with the CLI (`vahub doctor`, `vahub audit`, `vahub module verify`),
+  which needs shell access to the host. Someone who can talk to the assistant
+  cannot thereby read the history of everything it has ever been asked to do.
 * **Denial of service and cost.** The budgets bound one turn (iterations, tool
   result bytes, tokens, wall clock). They keep a loop from becoming an
   unbounded bill. They are not a defence against someone who can reach the API

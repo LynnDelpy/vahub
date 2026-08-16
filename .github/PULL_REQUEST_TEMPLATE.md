@@ -21,7 +21,7 @@ a sentence here.
 - [ ] This does not change what the policy gate allows, or the change is described above.
 - [ ] This does not add a path that reaches a module without passing through the gate.
 - [ ] This does not widen the environment a module process receives.
-- [ ] Module output added to the web console is inserted as text, never as HTML.
+- [ ] Module output rendered on the assistant page is inserted as text, never as HTML.
 - [ ] No new subprocess is started through a shell, and no argument is interpolated into a command string.
 - [ ] Secrets stay out of logs, out of the audit trail, and out of error messages returned to callers.
 

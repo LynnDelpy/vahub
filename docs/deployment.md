@@ -110,9 +110,13 @@ The shape of the stack, and why:
   offline, issue one certificate per device, and either check a revocation list or keep
   lifetimes short enough that expiry is your revocation mechanism.
 
-[deploy/docker/Caddyfile](../deploy/docker/Caddyfile) also returns 404 for `/api/dev/*`, so
-the unauthenticated dev endpoint cannot be reached from outside even if someone turns it on.
-Developers reach it through [docker-compose.dev.yml](../deploy/docker/docker-compose.dev.yml),
+The web surface is the assistant and nothing else: asking something, speaking something, and
+approving a destructive action a person was asked to confirm. There is no operator interface
+over HTTP. Module state, module stderr and the audit log are read with the CLI on the host
+(`vahub doctor`, `vahub audit`), which needs the same access that changing the policy needs.
+[deploy/docker/Caddyfile](../deploy/docker/Caddyfile) refuses the old operator paths with a
+404 as defence in depth, so a future regression cannot quietly put a debugger on the network.
+Developers work through [docker-compose.dev.yml](../deploy/docker/docker-compose.dev.yml),
 which publishes port 8080 on loopback, mounts the source over the installed package, and
 turns on debug logging. Do not use that overlay on a machine you care about.
 
@@ -398,8 +402,9 @@ runtime. Useful events: `hub_starting`, `hub_ready`, `module_discovered`,
 journalctl -u vahub -f | jq -c 'select(.event | startswith("module_"))'
 ```
 
-Module stderr is captured separately, kept as the last 200 lines per module, published on
-the event bus, and visible in the console. That is where a module's own error messages go.
+Module stderr is captured separately, kept as the last 200 lines per module, and published on
+the event bus. It stays on the host: it is in the service log, not on the web. That is where a
+module's own error messages go.
 
 ### Metrics
 
@@ -460,7 +465,7 @@ it cannot fulfil, which is either a policy that is too tight or a description th
 misleading.
 
 ```bash
-curl -s localhost:8080/api/audit | jq -r '.[] | [.module, .tool, .decision] | @tsv' \
+vahub audit --json | jq -r '.[] | [.module, .tool, .decision] | @tsv' \
   | sort | uniq -c | sort -rn | head
 ```
 
@@ -468,7 +473,7 @@ curl -s localhost:8080/api/audit | jq -r '.[] | [.module, .tool, .decision] | @t
 
 `GET /health` is unauthenticated and cheap, for the container healthcheck and the load
 balancer. It reports that the process is serving. It is not a statement about modules; use
-`/api/modules` or the metrics for that.
+`vahub doctor` on the host or the metrics for that.
 
 ## Hardening checklist
 
@@ -477,8 +482,6 @@ Configuration:
 * [ ] `web.host` is `127.0.0.1`, or the port is otherwise unreachable except through the
       proxy.
 * [ ] `web.origin_allowlist` names the exact origins you use, and is not `"*"`.
-* [ ] `web.dev_tools_endpoint` is `false`. It executes tools directly and is
-      unauthenticated. It is a development convenience, not a feature.
 * [ ] `policy.default` is `deny`.
 * [ ] Every rule constrains every argument its tool accepts. An argument with no constraint
       entry is refused, so a rule with an empty `constraints` block is a tool that cannot
@@ -498,7 +501,7 @@ Network:
 * [ ] Egress is restricted to what the hub and its modules actually need: the model
       provider, and each module's backend. An assistant with an outbound path to anywhere
       is a data exfiltration path with a language model attached.
-* [ ] `/metrics` and the console are not published to the internet unauthenticated.
+* [ ] `/metrics` and the assistant page are not published to the internet unauthenticated.
 
 Host:
 

@@ -1,8 +1,8 @@
 """The one path every tool call takes: validate, gate, dispatch, audit.
 
-The agent, the scheduler and the dev endpoint all call through here, which is
-the only reason the policy gate is a boundary at all: a second way to reach a
-module would be a second way to bypass it.
+The agent, the scheduler and a confirmed destructive action all call through
+here, which is the only reason the policy gate is a boundary at all: a second
+way to reach a module would be a second way to bypass it.
 
 Two properties this file exists to guarantee.
 

@@ -1,7 +1,7 @@
 """The whole call path: validate, gate, dispatch, audit.
 
-Every caller (the agent, the scheduler, the dev endpoint, a confirmation from
-the UI) goes through ModuleAPI, so this is where the guarantees have to hold
+Every caller (the agent, the scheduler, a confirmation from the UI) goes
+through ModuleAPI, so this is where the guarantees have to hold
 rather than in any one of them. The three that matter: a denied call never
 reaches the module, a destructive call runs with the arguments that were
 approved and no others, and whatever happens ends up in the audit log.

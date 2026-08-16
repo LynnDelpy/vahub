@@ -8,7 +8,7 @@ really" or "it depends, and here is how to measure it".
 Partly, and which part depends on how you configure three separate things.
 
 **The hub itself is offline.** The supervisor, the policy gate, the audit log, the
-scheduler, the web console and the module transport are all local. No part of the hub
+scheduler, the web interface and the module transport are all local. No part of the hub
 phones home, checks a licence, or needs an account.
 
 **The language model is not, unless you make it.** With the default `openai_compat`
@@ -100,8 +100,8 @@ The mitigations are the same ones the design already asks for, which is not a co
   If a module has a write tool, it should have a read tool that names things,
 * `budgets.iterations_per_turn` stops a loop.
 
-How to evaluate a candidate model yourself, in an evening: enable the dev tools endpoint on
-a test instance, ask your ten most common household requests, and read the audit log.
+How to evaluate a candidate model yourself, in an evening: point a test instance at the
+model, ask your ten most common household requests, and read `vahub audit`.
 Count how many calls were denied for a bad argument and how many turns ended on the
 iteration limit. That number, not a benchmark score, is what you care about.
 
@@ -129,9 +129,8 @@ reports `ok: false`, the module goes `degraded`, not `failed`, and is not restar
 restarting a healthy process will not bring someone's server back. It keeps probing and
 returns to `ready` by itself.
 
-To see the state: the console, `GET /api/modules`, `vahub doctor`, or the
-`vahub_module_state` metric. The module's own error messages are in its captured stderr,
-visible in the console and on the event bus.
+To see the state: `vahub doctor` on the host, or the `vahub_module_state` metric. The
+module's own error messages are in its captured stderr, which the service log shows.
 
 A module that hangs without exiting is caught by two mechanisms: every tool call has a
 timeout, and the health probe has its own. A late reply after a timeout is discarded by
@@ -231,7 +230,7 @@ the gate was there to prevent. See [writing-modules.md](writing-modules.md).
 
 ## Can I use it without voice?
 
-Yes. The console has a text box, and `POST /api/chat` is the same path with no speech
+Yes. The assistant page has a text box, and `POST /api/chat` is the same path with no speech
 involved. Set `speech.stt.provider: none` and `speech.tts.provider: none` if you never want
 audio. Voice adds a shorter wall clock budget (`budgets.wall_clock_voice_s`) because a
 person waiting for a spoken answer gives up sooner than one watching a screen.
@@ -261,12 +260,12 @@ In order of likelihood:
 2. **The hub was not restarted.** Modules are discovered at start.
 3. **Missing configuration.** A module with a missing required key stays `unconfigured` and
    is never spawned. `vahub module list` names the missing keys.
-4. **It is not `ready`.** Check `GET /api/modules` and the module's stderr in the console.
+4. **It is not `ready`.** Run `vahub doctor` and read the module's stderr in the service log.
 5. **The descriptions are unclear.** If the module is ready and permitted and the model
    still does not call it, the tool descriptions are the problem. The model chooses from
    them alone. Say when to use the tool, not what it does internally.
 
-`vahub module verify` and the dev tools endpoint let you separate "the module is broken"
+`vahub module verify` lets you separate "the module is broken"
 from "the model is not choosing it", which is the distinction that matters and the one
 people usually skip.
 
@@ -283,7 +282,7 @@ version.
 * **Modules are semi trusted.** They run your chosen code, but the hub assumes they can be
   broken or hostile: minimal environment, no shell, optional uid separation, timeouts on
   everything, results guarded before use, and module controlled strings never rendered as
-  HTML in the console.
+  HTML on the page.
 * **The network is not trusted.** The hub has no authentication of its own and binds to
   loopback. A proxy with client certificates is the intended boundary.
 * **The operator is trusted.** Whoever writes `vahub.yaml` decides what the assistant can

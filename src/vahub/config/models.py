@@ -53,7 +53,27 @@ class HubConfig(Strict):
         return self.state_dir / "vahub.db"
 
 
+# Keys that used to exist under `web`. `extra="forbid"` would reject them with a
+# generic "extra inputs are not permitted", which tells someone upgrading nothing
+# about what replaced them.
+REMOVED_WEB_KEYS: dict[str, str] = {
+    "dev_tools_endpoint": (
+        "the web surface no longer executes tools directly; use the CLI on the "
+        "host (vahub module verify, vahub audit) instead"
+    ),
+}
+
+
 class WebConfig(Strict):
+    @model_validator(mode="before")
+    @classmethod
+    def _explain_removed_keys(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            for key, why in REMOVED_WEB_KEYS.items():
+                if key in data:
+                    raise ValueError(f"web.{key} was removed: {why}")
+        return data
+
     # Loopback by default: the hub has no authentication of its own, so exposing
     # it directly is a deliberate act, not an accident of the default config.
     host: str = "127.0.0.1"
@@ -62,10 +82,6 @@ class WebConfig(Strict):
     # cross-origin POST, and it does not apply to WebSockets at all, so this is
     # checked explicitly on both. "*" disables the check.
     origin_allowlist: list[str] = Field(default_factory=lambda: ["http://localhost:8080"])
-    # Executes a tool directly, bypassing the agent. Useful when developing a
-    # module; it is still policy-gated, but it is unauthenticated, so it is off
-    # unless you turn it on.
-    dev_tools_endpoint: bool = False
     # Header the authenticating reverse proxy sets. Recorded in the audit log as
     # the acting principal. Informational: it is never an authorization input.
     auth_subject_header: str = "X-Auth-Subject"

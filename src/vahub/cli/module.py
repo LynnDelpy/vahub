@@ -375,13 +375,14 @@ def verify(
     This spawns the module the way the hub does and talks MCP to it, so it needs
     the module's own configuration in the environment.
     """
-    cli = state(ctx)
-    config = cli.load()
-
     if source is not None:
-        _print_report(verify_source_sync(source, startup_timeout_s=timeout))
-        return
+        # A source tree is verified on its own terms: this is what a module
+        # author runs in CI, where there is no hub configuration at all.
+        report = verify_source_sync(source, startup_timeout_s=timeout)
+        _print_report(report)
+        raise typer.Exit(0 if report.ok else 1)
 
+    config = state(ctx).load()
     names = [name] if name else [m.name for m in installed_modules(config)]
     if not names:
         console.print(f"No modules installed in {config.hub.modules_dir}.")

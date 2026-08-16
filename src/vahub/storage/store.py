@@ -129,7 +129,7 @@ class Store:
         self._path.parent.mkdir(parents=True, exist_ok=True)
         db = await aiosqlite.connect(self._path, isolation_level=None)
         db.row_factory = aiosqlite.Row
-        # WAL lets a reader (the status page, a backup) run while a writer works.
+        # WAL lets a reader (`vahub audit`, a backup) run while a writer works.
         await db.execute("PRAGMA journal_mode=WAL")
         await db.execute("PRAGMA synchronous=NORMAL")
         await db.execute("PRAGMA foreign_keys=ON")

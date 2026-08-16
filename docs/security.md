@@ -82,8 +82,9 @@ search, not a full match, so anchor patterns with `^` and `$` when you mean the 
 are compiled when the config loads, so a broken regex stops startup instead of failing open or failing
 late.
 
-Write rules narrowly and widen them when something is refused. A denial is visible in the console and in
-the audit log with the reason, so widening is a small edit and a restart.
+Write rules narrowly and widen them when something is refused. A denial is recorded in the audit log
+with the reason (`vahub audit --denied`), and the assistant reports the refusal in the reply, so
+widening is a small edit and a restart.
 
 ## Classes and the confirmation flow
 
@@ -99,8 +100,8 @@ principals:
 When the agent proposes a destructive call, the gate does not run it. It:
 
 1. Stores the call with its arguments **frozen**, and an expiry of `policy.confirm_ttl_s`.
-2. Publishes a confirmation request, which the console shows as a prompt with the module, the tool and
-   the reason.
+2. Publishes a confirmation request, which the assistant page shows as a prompt with the module, the
+   tool and the reason.
 3. Returns a `pending_id` to the model, which reports that confirmation is needed.
 
 A human then confirms on the display. The stored arguments are executed, not whatever the conversation
@@ -153,9 +154,10 @@ A module is a separate process speaking MCP over a pipe. The hub enforces:
   server-to-client requests are refused at the protocol level.
 
 Everything a module returns is treated as untrusted. Results that are not objects, error flags, oversize
-payloads and malformed JSON-RPC frames are all handled without raising into the caller. The console
-renders module-controlled strings (names, log lines, health payloads) as text, never as markup, because
-a status page is exactly where stored cross-site scripting would live.
+payloads and malformed JSON-RPC frames are all handled without raising into the caller. The assistant
+page renders module-controlled strings (the module, tool and argument names quoted in a confirmation
+prompt) as text, never as markup, because a page that renders them is exactly where stored cross-site
+scripting would live.
 
 The limits, stated plainly:
 
@@ -183,7 +185,7 @@ Recording never breaks the call path: an audit failure is swallowed rather than 
 into an error. That is a deliberate availability choice with a cost, so treat the log as a very good
 record rather than a guaranteed complete one, and keep the database on storage that is not full.
 
-The log is readable through `/api/audit` and, since it is SQLite, directly:
+The log is read with `vahub audit` on the host and, since it is SQLite, directly:
 
 ```sql
 SELECT datetime(ts,'unixepoch','localtime'), principal, module, tool, args, decision, result
@@ -204,8 +206,11 @@ What the hub does do:
 * Checks an `Origin` allowlist on state-changing routes and on the event WebSocket. Same-origin does not
   prevent another page from sending a cross-origin POST, and it does not apply to WebSockets at all. A
   request with no `Origin` (a script, curl) is allowed, which is why the bind address matters.
-* Keeps `/api/dev/call`, which executes a tool without the agent, disabled unless you enable it. It is
-  still gated by policy, and it is unauthenticated.
+* Exposes only the assistant on the web: asking something, speaking something, and approving a
+  destructive action that was held back for a person. Module states, module stderr, the audit log and
+  direct tool invocation are not reachable over HTTP at all. They are read with the CLI on the host
+  (`vahub audit`, `vahub doctor`, `vahub module verify`), which needs the same access that changing the
+  policy needs anyway.
 * Records the subject from `web.auth_subject_header` for the audit log. It is never an authorization
   input, because a header is trivially forged by anything that can reach the port directly.
 

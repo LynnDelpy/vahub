@@ -126,7 +126,6 @@ web:
   host: 127.0.0.1
   port: 8080
   origin_allowlist: ["http://localhost:8080"]
-  dev_tools_endpoint: false
   auth_subject_header: X-Auth-Subject
 ```
 
@@ -135,7 +134,6 @@ web:
 | `host` | `127.0.0.1` | Loopback by default. The hub has no authentication of its own, so binding it to a network address should be a deliberate act, not an accident of the default config |
 | `port` | `8080` | |
 | `origin_allowlist` | `["http://localhost:8080"]` | Browser origins allowed to call state-changing routes and open the event WebSocket. Same-origin does not stop a cross-origin POST and does not apply to WebSockets at all, so both are checked explicitly. `"*"` disables the check |
-| `dev_tools_endpoint` | `false` | Enables `/api/dev/call`, which executes a tool directly without the agent. Still policy gated, but unauthenticated, so it stays off unless you turn it on while developing a module |
 | `auth_subject_header` | `X-Auth-Subject` | The header your authenticating proxy sets. Recorded in the audit log as the acting principal. Informational only: it is never an authorization input |
 
 ### llm
@@ -316,7 +314,7 @@ which keys a module needs and can record values for them at install time (`--set
 EnvironmentFile=/etc/vahub/secrets.env   # 0600, owned by root
 ```
 
-A module whose required keys are missing is discovered and shown in the console as `unconfigured`
+A module whose required keys are missing is discovered and shown by `vahub doctor` as `unconfigured`
 instead of failing to spawn, so the reason is obvious.
 
 ## A complete example
@@ -333,7 +331,6 @@ web:
   host: 127.0.0.1
   port: 8080
   origin_allowlist: ["https://hub.example.internal"]
-  dev_tools_endpoint: false
 
 llm:
   provider: openai_compat

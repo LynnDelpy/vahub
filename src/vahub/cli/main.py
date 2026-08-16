@@ -20,6 +20,7 @@ from rich.console import Console
 from rich.text import Text
 
 from vahub.__about__ import __version__
+from vahub.cli import audit as audit_cmd
 from vahub.cli import config_cmd, doctor, init, module, run
 from vahub.cli.module import CLI_ERRORS
 from vahub.config.loader import default_config_path, load_config
@@ -53,6 +54,7 @@ app.command("init")(init.init)
 app.command("run")(run.run)
 app.command("serve")(run.serve)
 app.command("doctor")(doctor.doctor)
+app.command("audit")(audit_cmd.audit)
 
 
 def _version(value: bool) -> None:

@@ -55,6 +55,7 @@ class Scheduler:
         self._api = moduleapi
         self._bus = bus
         self._store = store
+        self._policy = config.policy
         self._timezone = _resolve_timezone(config.hub.timezone)
         self._schedules: dict[str, Schedule] = {s.id: s for s in config.schedules}
         self._locks: dict[str, asyncio.Lock] = {sid: asyncio.Lock() for sid in self._schedules}
@@ -180,6 +181,23 @@ class Scheduler:
             return {"ok": False, "error": "bad_steps", "detail": str(e)}
         if not parsed:
             return {"ok": False, "error": "bad_steps", "detail": "at least one step is required"}
+        # A schedule runs unattended as the scheduler, which cannot answer a
+        # confirmation. So a runtime-created schedule (from the UI or the
+        # assistant) must not contain a destructive step: otherwise the agent
+        # could launder an action it would have to get confirmed into one that
+        # fires with no human. A deliberately scheduled destructive action still
+        # belongs in the config file, which is the trusted boundary.
+        for step in parsed:
+            rule = self._policy.rules.get(f"{step.module}.{step.tool}")
+            if rule is not None and rule.cls == "destructive":
+                return {
+                    "ok": False,
+                    "error": "destructive_not_schedulable",
+                    "detail": (
+                        f"{step.module}.{step.tool} is destructive; schedule it in vahub.yaml "
+                        "if you really mean to run it unattended"
+                    ),
+                }
 
         sid = f"dyn-{uuid.uuid4().hex[:12]}"
         await self._store.add_dyn_schedule(

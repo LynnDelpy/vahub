@@ -196,7 +196,9 @@
       opts.headers["content-type"] = "application/json";
       opts.body = JSON.stringify(body);
     }
-    const r = await fetch(path, opts);
+    let r;
+    try { r = await fetch(path, opts); }
+    catch (e) { return { ok: false, status: 0, data: {} }; }   // network / offline
     let data = {};
     try { data = await r.json(); } catch (e) { /* empty body */ }
     return { ok: r.ok, status: r.status, data: data };
@@ -302,14 +304,22 @@
 
   // ---- live approvals over the socket -----------------------------------
   let wsBackoff = 1000;
+  let signedOut = false;
+  let socket = null;
   function connect() {
+    if (signedOut) return;
+    if (socket) { try { socket.close(); } catch (e) { /* already gone */ } socket = null; }
     let ws;
     try {
       const proto = location.protocol === "https:" ? "wss:" : "ws:";
       ws = new WebSocket(proto + "//" + location.host + "/ws/events");
     } catch (e) { return; }
+    socket = ws;
     ws.onopen = function () { setState(""); wsBackoff = 1000; loadPending(); };
     ws.onclose = function () {
+      // Stop reconnecting once the user has signed out; otherwise the server
+      // keeps closing an unauthenticated handshake and the client retries forever.
+      if (signedOut) return;
       setState("reconnecting");
       setTimeout(connect, wsBackoff);
       wsBackoff = Math.min(wsBackoff * 2, 30000);   // back off instead of hammering
@@ -331,7 +341,7 @@
     const r = await api("POST", "/api/chat", { message: message, session_id: sessionId });
     pending.remove();
     if (!r.ok) {
-      if (r.status === 401) { showGate(); return; }
+      if (r.status === 401) { dropToLogin(); return; }
       bubble(r.data.detail || ("Something went wrong (" + r.status + ")."), "problem");
     } else {
       sessionId = r.data.session_id || sessionId;
@@ -400,6 +410,8 @@
   }
 
   function startAssistant() {
+    // One-time setup (speech, client config). The socket is opened by showApp so
+    // it reconnects on a fresh sign in; it is not started here.
     if (assistantStarted) return;
     assistantStarted = true;
     (async function () {
@@ -407,7 +419,6 @@
       if (r.ok) config = r.data;
       if (config.stt_provider === "openai_compat") useServerSpeech();
       else useBrowserSpeech();
-      connect();
     })();
   }
 
@@ -614,16 +625,26 @@
   // ---- auth gate --------------------------------------------------------
   const gate = $("gate"), gateBody = $("gateBody");
   function showApp(me) {
+    signedOut = false;
     gate.classList.remove("active");
     $("topbar").hidden = false;
     if (me && me.username) { $("who").textContent = me.username; $("logout").hidden = false; }
     selectTab("thread");
     startAssistant();
+    connect();   // fresh socket, so a re-login reconnects instead of relying on the old loop
   }
   function showGate() {
     $("topbar").hidden = true;
     $("composerBar").hidden = true;
     gate.classList.add("active");
+  }
+  function dropToLogin() {
+    // Session expired or a route returned 401 mid-use: show the login form, not
+    // an empty box, and stop the socket from retrying unauthenticated.
+    signedOut = true;
+    if (socket) { try { socket.close(); } catch (e) { /* gone */ } socket = null; }
+    renderLogin(false);
+    showGate();
   }
   function renderLogin(setup) {
     gateBody.textContent = "";
@@ -656,6 +677,8 @@
     user.focus();
   }
   $("logout").addEventListener("click", async function () {
+    signedOut = true;
+    if (socket) { try { socket.close(); } catch (e) { /* gone */ } socket = null; }
     await api("POST", "/api/logout");
     renderLogin(false);
     showGate();
@@ -663,8 +686,11 @@
 
   async function boot() {
     const r = await api("GET", "/api/me");
+    // An errored /api/me must not silently load the app (fail-open) or leave a
+    // blank page: fall back to the login screen.
+    if (!r.ok) { dropToLogin(); return; }
     const me = r.data || {};
-    if (!me.auth || me.authenticated) { showApp(me); return; }
+    if (me.auth === false || me.authenticated) { showApp(me); return; }
     renderLogin(!!me.setup_required);
     showGate();
   }

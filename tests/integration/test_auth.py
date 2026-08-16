@@ -117,3 +117,18 @@ async def test_login_is_throttled(client, rt) -> None:
         await client.post("/api/login", json={"username": "lynn", "password": "no"})
     blocked = await client.post("/api/login", json={"username": "lynn", "password": "no"})
     assert blocked.status_code == 429
+
+
+async def test_metrics_is_reachable_without_a_session(client) -> None:
+    # A scraper has no login; /metrics must not be caught by the auth guard (it is
+    # still origin-checked and the proxy 404s it for clients).
+    r = await client.get("/metrics")
+    assert r.status_code == 200
+
+
+async def test_setup_required_is_false_when_the_only_account_is_disabled(client, rt) -> None:
+    await _add_user(rt)
+    await rt.store.set_user_disabled("lynn", True)
+    me = (await client.get("/api/me")).json()
+    # An account still exists, it is just disabled: re-enable it, do not "set up".
+    assert me["setup_required"] is False

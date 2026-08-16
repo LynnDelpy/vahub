@@ -45,6 +45,34 @@ async def test_database_is_not_world_or_group_readable(store) -> None:
     assert mode & 0o077 == 0, f"db mode {oct(mode)} exposes the audit log to other users"
 
 
+async def test_upsert_location_partial_update_keeps_other_fields(store) -> None:
+    # Renaming the label of a place that already has coordinates must not wipe
+    # the coordinates to NULL.
+    await store.upsert_location("home", label="Home", latitude=47.4, longitude=9.4)
+    await store.upsert_location("home", label="House")  # no coordinates this time
+    loc = await store.get_location("home")
+    assert loc["label"] == "House"
+    assert loc["latitude"] == 47.4 and loc["longitude"] == 9.4
+
+
+async def test_count_users_includes_disabled(store) -> None:
+    # "Setup required" means no account at all, so a disabled account still counts.
+    await store.create_user("lynn", "x", None)
+    await store.set_user_disabled("lynn", True)
+    assert await store.count_users() == 1
+
+
+async def test_sweep_sessions_drops_expired(store) -> None:
+    import time
+
+    await store.create_user("lynn", "x", None)
+    await store.create_session("live", "lynn", time.time() + 100)
+    await store.create_session("dead", "lynn", time.time() - 1)
+    assert await store.sweep_sessions() == 1
+    assert await store.session_user("live") == "lynn"
+    assert await store.session_user("dead") is None
+
+
 async def test_recent_tool_calls_filters_before_the_limit(store) -> None:
     # One old denial, then a wall of newer allowed calls. `--denied -n 1` must
     # find the denial, not report nothing because it fell outside the last N.

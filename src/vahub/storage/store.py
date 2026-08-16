@@ -507,7 +507,10 @@ class Store:
         return [dict(row) for row in await cur.fetchall()]
 
     async def count_users(self) -> int:
-        cur = await self.db.execute("SELECT COUNT(*) AS n FROM users WHERE disabled=0")
+        """Total accounts, disabled included. "Setup required" means there is no
+        account at all; a disabled account is not the same as none, so it must
+        not flip the hub back into first-run state."""
+        cur = await self.db.execute("SELECT COUNT(*) AS n FROM users")
         row = await cur.fetchone()
         return int(row["n"]) if row else 0
 
@@ -608,11 +611,18 @@ class Store:
         longitude: float | None = None,
         address: str | None = None,
     ) -> None:
+        # COALESCE so a partial update (e.g. renaming the label of a place that
+        # already has coordinates) keeps the fields it did not mention, instead
+        # of clobbering them to NULL.
         await self.db.execute(
             "INSERT INTO locations(name, label, latitude, longitude, address, updated_at)"
             " VALUES(?,?,?,?,?,?)"
-            " ON CONFLICT(name) DO UPDATE SET label=excluded.label, latitude=excluded.latitude,"
-            " longitude=excluded.longitude, address=excluded.address, updated_at=excluded.updated_at",
+            " ON CONFLICT(name) DO UPDATE SET"
+            " label=COALESCE(excluded.label, locations.label),"
+            " latitude=COALESCE(excluded.latitude, locations.latitude),"
+            " longitude=COALESCE(excluded.longitude, locations.longitude),"
+            " address=COALESCE(excluded.address, locations.address),"
+            " updated_at=excluded.updated_at",
             (name, label, latitude, longitude, address, time.time()),
         )
 

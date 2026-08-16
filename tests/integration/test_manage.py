@@ -67,10 +67,15 @@ async def test_location_validates_coordinates(client) -> None:
     assert r.status_code == 422  # out of the -90..90 range
 
 
-async def test_settings_and_memory_are_separated(client) -> None:
+async def test_settings_and_memory_are_separated(client, rt) -> None:
     await client.put("/api/settings/units", json={"value": "metric"})
-    # A key the assistant remembered lands under memory, not preferences.
-    await client.put("/api/settings/memory:anniversary", json={"value": "2018-06-01"})
+    # The preferences editor cannot write the assistant's memory namespace.
+    rejected = await client.put("/api/settings/memory:anniversary", json={"value": "2018-06-01"})
+    assert rejected.status_code == 400
+    # Memory is set by the assistant (its gated core.remember tool), which the
+    # store records under the memory: prefix.
+    await rt.store.set_setting("memory:anniversary", "2018-06-01")
+
     body = (await client.get("/api/settings")).json()
     assert body["settings"] == {"units": "metric"}
     assert body["memory"] == {"anniversary": "2018-06-01"}

@@ -12,6 +12,7 @@ issues a session, it does not register anyone.
 
 from __future__ import annotations
 
+import asyncio
 import secrets
 import time
 from collections import defaultdict
@@ -32,8 +33,10 @@ SESSION_COOKIE = "vahub_session"
 
 # Paths reachable without a session. Everything else is guarded when auth is on.
 # The page shell and /api/me must load so the client can show a login form; the
-# login endpoint obviously cannot require being logged in.
-_PUBLIC_PATHS = frozenset({"/", "/health", "/ready", "/api/login", "/api/me"})
+# login endpoint obviously cannot require being logged in; /metrics is scraped by
+# a machine that has no session (it is still origin-checked, and the proxy 404s
+# it for clients).
+_PUBLIC_PATHS = frozenset({"/", "/health", "/ready", "/metrics", "/api/login", "/api/me"})
 _PUBLIC_PREFIXES = ("/static/",)
 
 
@@ -48,9 +51,10 @@ class _Throttle:
     intentionally simple and per-process; a serious deployment authenticates at
     the proxy. Successful logins clear the count."""
 
-    def __init__(self, limit: int = 5, window_s: float = 300.0) -> None:
+    def __init__(self, limit: int = 5, window_s: float = 300.0, max_keys: int = 4096) -> None:
         self._limit = limit
         self._window_s = window_s
+        self._max_keys = max_keys
         self._fails: dict[str, list[float]] = defaultdict(list)
 
     def locked(self, key: str, now: float) -> bool:
@@ -59,6 +63,12 @@ class _Throttle:
         return len(recent) >= self._limit
 
     def record_failure(self, key: str, now: float) -> None:
+        # Bound the map so a flood of distinct usernames cannot grow it without
+        # limit: drop the stalest keys once it is full.
+        if key not in self._fails and len(self._fails) >= self._max_keys:
+            stale = sorted(self._fails, key=lambda k: max(self._fails[k], default=0.0))[: self._max_keys // 4]
+            for k in stale:
+                self._fails.pop(k, None)
         self._fails[key].append(now)
 
     def clear(self, key: str) -> None:
@@ -126,9 +136,12 @@ def build_router(rt: Runtime) -> APIRouter:
 
         user = await rt.store.get_user(body.username)
         # Verify even when the user is missing, against a throwaway hash, so the
-        # response time does not reveal whether the username exists.
+        # response time does not reveal whether the username exists. scrypt is a
+        # deliberately expensive, GIL-holding C call, so it runs in a thread: on
+        # the event loop it would freeze every other request for its duration,
+        # and a flood of logins would be a denial of service.
         stored = (user or {}).get("password_hash") or _DUMMY_HASH
-        ok = verify_password(body.password, stored)
+        ok = await asyncio.to_thread(verify_password, body.password, stored)
         if user is None or user.get("disabled") or not ok:
             throttle.record_failure(key, now)
             return JSONResponse({"ok": False, "error": "invalid_credentials"}, status_code=401)
@@ -136,8 +149,10 @@ def build_router(rt: Runtime) -> APIRouter:
         throttle.clear(key)
         # Opportunistically upgrade an old hash now that the password is in hand.
         if needs_rehash(stored):
-            await rt.store.set_password(body.username, hash_password(body.password))
+            new_hash = await asyncio.to_thread(hash_password, body.password)
+            await rt.store.set_password(body.username, new_hash)
 
+        await rt.store.sweep_sessions()  # drop expired rows so the table stays small
         sid = secrets.token_urlsafe(32)
         await rt.store.create_session(sid, body.username, now + auth.session_ttl_s)
         response = JSONResponse({"ok": True, "username": body.username})

@@ -103,6 +103,10 @@ def build_router(rt: Runtime) -> APIRouter:
         body: SettingBody, request: Request, key: str = Path(pattern=_KEY)
     ) -> JSONResponse:
         check_origin(request, rt.config)
+        # `memory:` is the assistant's own namespace, managed through its gated
+        # tools; the preferences editor must not write into it.
+        if key.startswith("memory:"):
+            return JSONResponse({"ok": False, "error": "reserved_key"}, status_code=400)
         await rt.store.set_setting(key, body.value)
         return JSONResponse({"ok": True, "key": key})
 

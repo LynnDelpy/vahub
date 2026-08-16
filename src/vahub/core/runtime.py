@@ -26,6 +26,7 @@ import uvicorn
 
 from ..config.loader import default_config_path
 from ..config.models import Config
+from . import metrics
 from .bus import EventBus
 from .catalog import Catalog
 from .logging import configure as configure_logging
@@ -90,7 +91,7 @@ class Runtime:
             bus=self.bus,
             timezone=config.hub.timezone,
         )
-        self.scheduler = Scheduler(self.moduleapi, self.bus, config)
+        self.scheduler = Scheduler(self.moduleapi, self.bus, config, store=self.store)
 
         self._stop = asyncio.Event()
         self._server: uvicorn.Server | None = None
@@ -99,6 +100,15 @@ class Runtime:
     # --- lifecycle ---------------------------------------------------------
     def request_stop(self) -> None:
         self._stop.set()
+
+    def _register_builtins(self) -> None:
+        """Insert the synthetic `core` module so its tools appear in the catalog
+        and dispatch in process through the same gate as any other module."""
+        from .builtins import CORE_MODULE, build_core_module
+
+        module = build_core_module(self.store, self.scheduler)
+        self.supervisor.modules[CORE_MODULE] = module
+        metrics.set_module_state(CORE_MODULE, module.state.value)
 
     async def run(self) -> None:
         self.config.hub.state_dir.mkdir(parents=True, exist_ok=True)
@@ -117,7 +127,11 @@ class Runtime:
         )
         self.supervisor.discover()
         await self.supervisor.start()
+        # After start(): the built-in module is always ready and has no process,
+        # so it must not be handed to the supervisor's spawn loop.
+        self._register_builtins()
         self.scheduler.start()
+        await self.scheduler.sync_from_store()
         self._background.append(
             asyncio.create_task(self._persist_module_state(), name="persist-module-state")
         )

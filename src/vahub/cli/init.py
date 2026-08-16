@@ -531,10 +531,16 @@ def _starter_policy(modules: dict[str, Manifest]) -> dict[str, Any]:
     generated file says so; there is no way to derive argument constraints from
     a manifest, which only declares names and classes.
     """
+    from vahub.core.builtins import CORE_RULES
+
     rules: dict[str, Any] = {}
     for name, manifest in sorted(modules.items()):
         for tool, spec in sorted(manifest.tools.items()):
             rules[f"{name}.{tool}"] = {"class": spec.cls}
+    # The built-in tools that let the assistant save a location, remember a fact
+    # and create a schedule. Their constraints are known (unlike a module's), so
+    # they ship complete rather than as a stub to fill in.
+    rules.update(CORE_RULES)
     return {
         "default": "deny",
         "confirm_ttl_s": 60.0,

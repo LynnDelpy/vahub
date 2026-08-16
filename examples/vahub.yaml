@@ -176,6 +176,53 @@ policy:
   # rejected: the gate never waves through something it was not told about. So
   # every argument a tool accepts must be listed, read tools included.
   rules:
+    # ---- the assistant's own data (built-in "core" module) ----
+    # These let the assistant save a location, remember a fact, and manage
+    # schedules. Reading is free; writing changes saved data but touches neither
+    # the policy nor the accounts. A schedule the assistant creates still runs as
+    # the scheduler, so it is bounded by the scheduler's rules at run time.
+    core.list_locations: { class: read }
+    core.set_location:
+      class: write
+      constraints:
+        name: { max_len: 40 }
+        label: { max_len: 80 }
+        latitude: { range: [-90, 90] }
+        longitude: { range: [-180, 180] }
+        address: { max_len: 200 }
+    core.delete_location:
+      class: write
+      constraints: { name: { max_len: 40 } }
+    core.remember:
+      class: write
+      constraints:
+        key: { max_len: 60 }
+        value: { max_len: 500 }
+    core.recall:
+      class: read
+      constraints: { key: { max_len: 60 } }
+    core.list_memory: { class: read }
+    core.forget:
+      class: write
+      constraints: { key: { max_len: 60 } }
+    core.list_schedules: { class: read }
+    core.create_schedule:
+      class: write
+      constraints:
+        cron: { max_len: 100 }
+        module: { max_len: 40 }
+        tool: { max_len: 60 }
+        args: { max_len: 20 }
+        description: { max_len: 120 }
+    core.delete_schedule:
+      class: write
+      constraints: { id: { max_len: 40 } }
+    core.set_schedule_enabled:
+      class: write
+      constraints:
+        id: { max_len: 40 }
+        enabled: { in: [true, false] }
+
     # ---- time ----
     time.get_current_time:
       class: read

@@ -46,7 +46,7 @@ https://{$VAHUB_DOMAIN:localhost}:8443 {
 	# so a future regression cannot quietly put a debugger on the network. /metrics
 	# is operator information (module and tool inventory), reachable by a scraper on
 	# the internal network but never through this client-facing proxy.
-	@operator path /api/dev/* /api/modules* /api/audit /api/tools /api/schedules* /metrics
+	@operator path /api/dev/* /api/modules* /api/audit /api/tools /metrics
 	handle @operator {
 		respond 404
 	}

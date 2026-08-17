@@ -111,6 +111,22 @@
   .note { font-size: .82rem; color: var(--muted); }
   .err { color: var(--danger); font-size: .85rem; min-height: 1.2em; }
 
+  /* module state badges and per-module config rows */
+  .badge { font-size: .72rem; padding: .1rem .45rem; border-radius: 6px; border: 1px solid var(--line); color: var(--muted); text-transform: uppercase; letter-spacing: .03em; }
+  .badge.ready { color: #1a7f37; border-color: #1a7f3733; background: #1a7f3712; }
+  .badge.unconfigured, .badge.degraded, .badge.stopped { color: var(--warn-line); border-color: var(--warn-line); }
+  .badge.failed { color: var(--danger); border-color: var(--danger); }
+  .cfgrow { display: flex; align-items: center; gap: .5rem; padding: .4rem 0; border-top: 1px solid var(--line); }
+  .cfgrow .key { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .82rem; min-width: 9rem; overflow-wrap: anywhere; }
+  .cfgrow input { flex: 1; min-width: 6rem; }
+  .cfgrow .req { color: var(--danger); }
+
+  /* service dashboard cards (github, gitlab, email) */
+  .tiles { display: flex; gap: .8rem; margin-bottom: .3rem; }
+  .tiles .tile { text-align: center; }
+  .tiles .tile .n { font-size: 1.6rem; font-weight: 600; font-variant-numeric: tabular-nums; display: block; }
+  .tiles .tile .l { font-size: .7rem; color: var(--muted); text-transform: uppercase; letter-spacing: .02em; }
+
   /* home dashboard: a grid of cards you arrange */
   .home-head { display: flex; align-items: baseline; gap: .6rem; margin-bottom: .8rem; }
   .home-head h2 { margin: 0; }
@@ -147,6 +163,7 @@
       <button data-tab="locations" type="button">Locations</button>
       <button data-tab="settings" type="button">Settings</button>
       <button data-tab="schedules" type="button">Schedules</button>
+      <button data-tab="modules" type="button">Modules</button>
     </nav>
     <span class="spacer"></span>
     <span class="state" id="state" role="status" aria-live="polite"></span>
@@ -165,6 +182,7 @@
     <section class="panel" id="locations" aria-label="Saved locations"></section>
     <section class="panel" id="settings" aria-label="Settings"></section>
     <section class="panel" id="schedules" aria-label="Schedules"></section>
+    <section class="panel" id="modules" aria-label="Modules"></section>
   </main>
 
   <footer id="composerBar" hidden>
@@ -182,7 +200,7 @@
 
   <div id="gate">
     <div class="box card">
-      <h1>Sign in</h1>
+      <h1 id="gateTitle">Sign in</h1>
       <div id="gateBody"></div>
     </div>
   </div>
@@ -632,11 +650,181 @@
     ]));
   }
 
+  // ---- modules: install, configure, remove ------------------------------
+  async function doInstall(body, errBox, btn) {
+    errBox.textContent = "";
+    if (body.source !== undefined && !body.source) { errBox.textContent = "Enter a source."; return; }
+    const label = btn.textContent;
+    btn.disabled = true; btn.textContent = "Installing…";
+    const r = await api("POST", "/api/modules", body);
+    btn.disabled = false; btn.textContent = label;
+    if (!r.ok || !r.data.ok) {
+      errBox.textContent = "Install failed: " + ((r.data && (r.data.detail || r.data.error)) || r.status);
+      return;
+    }
+    renderModules();
+  }
+
+  function moduleCard(m) {
+    const card = el("div", { class: "card" });
+    const rm = el("button", { class: "btn small danger", type: "button", text: "Remove" });
+    rm.addEventListener("click", async function () {
+      rm.disabled = true;
+      await api("DELETE", "/api/modules/" + encodeURIComponent(m.name));
+      renderModules();
+    });
+    card.appendChild(el("div", { class: "home-head" }, [
+      el("strong", { text: m.name }),
+      el("span", { class: "badge " + (m.state || ""), text: m.state || "" }),
+      el("span", { class: "spacer" }),
+      rm,
+    ]));
+    if (m.description) card.appendChild(el("p", { class: "sub", text: m.description }));
+    if (m.tools && m.tools.length) {
+      const names = m.tools.map(function (t) { return t.name + " (" + t["class"] + ")"; }).join(", ");
+      card.appendChild(el("p", { class: "note", text: "Tools: " + names }));
+    }
+    if (m.has_policy_rule === false) {
+      card.appendChild(el("p", { class: "note", text: "The assistant needs a policy rule for these tools in vahub.yaml before it can use them. A dashboard card can read them now." }));
+    }
+
+    const cfg = m.config || { required: [], optional: [], set: [] };
+    const setKeys = cfg.set || [];
+    const allKeys = (cfg.required || []).concat(cfg.optional || []);
+    if (allKeys.length) {
+      card.appendChild(el("p", { class: "note", text: "Configuration (values are stored on the hub, never shown back):" }));
+      allKeys.forEach(function (key) {
+        const isReq = (cfg.required || []).indexOf(key) !== -1;
+        const isSet = setKeys.indexOf(key) !== -1;
+        const inp = el("input", { type: "password", autocomplete: "off",
+          placeholder: isSet ? "•••••• set — type to replace" : (isReq ? "required" : "optional") });
+        const save = el("button", { class: "btn small", type: "button", text: "Save" });
+        const err = el("div", { class: "err" });
+        save.addEventListener("click", async function () {
+          err.textContent = "";
+          if (!inp.value) { err.textContent = "Enter a value."; return; }
+          const res = await api("PUT", "/api/modules/" + encodeURIComponent(m.name) + "/config/" + encodeURIComponent(key), { value: inp.value });
+          if (!res.ok || !res.data.ok) { err.textContent = "Could not save: " + ((res.data && (res.data.detail || res.data.error)) || res.status); return; }
+          renderModules();
+        });
+        const row = el("div", { class: "cfgrow" }, [
+          el("span", { class: "key" + (isReq ? " req" : ""), text: key }),
+          inp, save,
+        ]);
+        if (isSet) {
+          const clear = el("button", { class: "btn small danger", type: "button", text: "Clear" });
+          clear.addEventListener("click", async function () {
+            await api("DELETE", "/api/modules/" + encodeURIComponent(m.name) + "/config/" + encodeURIComponent(key));
+            renderModules();
+          });
+          row.appendChild(clear);
+        }
+        card.appendChild(row);
+        card.appendChild(err);
+      });
+    }
+    if (m.missing_config && m.missing_config.length) {
+      card.appendChild(el("p", { class: "err", text: "Needs: " + m.missing_config.join(", ") }));
+    }
+    return card;
+  }
+
+  async function renderModules() {
+    const panel = $("modules");
+    panel.textContent = "";
+    panel.appendChild(el("h2", { text: "Modules" }));
+    panel.appendChild(el("p", { class: "sub", text: "Install a module, give it the settings it needs, and remove it. Installing does not grant permission: a tool stays denied until you add a policy rule for it in vahub.yaml on the host." }));
+
+    const r = await api("GET", "/api/modules");
+    const mods = (r.ok && r.data.modules) || [];
+    if (!mods.length) panel.appendChild(el("p", { class: "note", text: "No modules installed yet." }));
+    mods.forEach(function (m) { panel.appendChild(moduleCard(m)); });
+
+    // Add-a-module card. The registry list loads after, so a slow index does not
+    // hold up the installed list.
+    const avList = el("div");
+    const src = el("input", { type: "text", placeholder: "git+https://…@tag#subdir=…, pypi:…, or ./path" });
+    const srcErr = el("div", { class: "err" });
+    const srcBtn = el("button", { class: "btn", type: "button", text: "Install from source" });
+    srcBtn.addEventListener("click", function () { doInstall({ source: src.value.trim() }, srcErr, srcBtn); });
+    panel.appendChild(el("div", { class: "card" }, [
+      el("h2", { text: "Add a module" }),
+      el("p", { class: "sub", text: "From the registry:" }),
+      avList,
+      el("p", { class: "sub", text: "Or from a pinned source:" }),
+      el("div", { class: "grid" }, [el("label", { class: "field full" }, ["source", src])]),
+      srcErr,
+      el("div", { class: "row-actions" }, [srcBtn]),
+    ]));
+
+    const a = await api("GET", "/api/modules/available");
+    if (a.data && a.data.error) { avList.appendChild(el("p", { class: "note", text: "Registry unavailable: " + a.data.error })); return; }
+    const notInstalled = ((a.ok && a.data.available) || []).filter(function (it) { return !it.installed; });
+    if (!notInstalled.length) { avList.appendChild(el("p", { class: "note", text: "Everything in the registry is installed." })); return; }
+    const ul = el("ul", { class: "items" });
+    notInstalled.forEach(function (it) {
+      const btn = el("button", { class: "btn small primary", type: "button", text: "Install" });
+      const err = el("div", { class: "err" });
+      btn.addEventListener("click", function () { doInstall({ name: it.name }, err, btn); });
+      ul.appendChild(el("li", null, [
+        el("span", { class: "grow" }, [el("strong", { text: it.name }), el("span", { class: "meta", text: "  " + (it.description || "") })]),
+        btn,
+      ]));
+      ul.appendChild(err);
+    });
+    avList.appendChild(ul);
+  }
+
   // ---- home dashboard: a grid of cards the user arranges ---------------
   let currentUser = null;
   let dashLayout = null;     // ordered list of widget keys; null until loaded
   let editing = false;
   let clockTimer = null;
+
+  // A dashboard card backed by a module's read-only `summary` tool, called
+  // through the owner's read-tool endpoint. Tiles are counts; each recent row is
+  // built by `line`. The module and the model produced the strings, so they are
+  // inserted as text like everything else.
+  function serviceWidget(module, tiles, line) {
+    return async function (card) {
+      const body = el("div", null, [el("div", { class: "muted", text: "Loading…" })]);
+      card.appendChild(body);
+      const r = await api("POST", "/api/tools/" + module + "/summary", { args: {} });
+      body.textContent = "";
+      if (!r.ok || !r.data.ok) {
+        const why = (r.data && r.data.error) || "";
+        const msg = why === "unknown_module" ? "Not installed. Add it in the Modules tab."
+          : (why === "module_not_ready" || why === "not_readonly") ? "Set it up in the Modules tab."
+          : "Unavailable right now.";
+        body.appendChild(el("div", { class: "muted", text: msg }));
+        return;
+      }
+      const p = r.data.result || {};
+      if (p.configured === false) { body.appendChild(el("div", { class: "muted", text: "Add its token in the Modules tab." })); return; }
+      if (p.error) { body.appendChild(el("div", { class: "muted", text: String(p.error) })); return; }
+      const row = el("div", { class: "tiles" });
+      tiles.forEach(function (t) {
+        const n = p[t.key];
+        row.appendChild(el("div", { class: "tile" }, [
+          el("span", { class: "n", text: (n == null ? "–" : String(n)) }),
+          el("span", { class: "l", text: t.label }),
+        ]));
+      });
+      body.appendChild(row);
+      const recent = p.recent || [];
+      if (recent.length) {
+        const ul = el("ul");
+        recent.slice(0, 5).forEach(function (item) { ul.appendChild(el("li", null, [line(item)])); });
+        body.appendChild(ul);
+      }
+    };
+  }
+  function twoLine(primary, secondary) {
+    return el("span", null, [
+      el("strong", { text: primary || "" }),
+      el("span", { class: "muted", text: secondary ? "  " + secondary : "" }),
+    ]);
+  }
 
   const WIDGETS = {
     clock:    { title: "Clock", render: renderClock },
@@ -644,6 +832,15 @@
     places:   { title: "Saved places", render: renderPlacesWidget },
     routines: { title: "Upcoming routines", render: renderRoutinesWidget },
     notes:    { title: "Assistant remembers", render: renderNotesWidget },
+    github:   { title: "GitHub", render: serviceWidget("github",
+      [{ key: "notifications", label: "Inbox" }, { key: "review_requests", label: "Reviews" }, { key: "assigned_issues", label: "Issues" }],
+      function (it) { return twoLine(it.title, it.repo); }) },
+    gitlab:   { title: "GitLab", render: serviceWidget("gitlab",
+      [{ key: "todos", label: "To-dos" }, { key: "assigned_merge_requests", label: "MRs" }, { key: "assigned_issues", label: "Issues" }],
+      function (it) { return twoLine(it.title, it.project); }) },
+    email:    { title: "Email", render: serviceWidget("email",
+      [{ key: "unread", label: "Unread" }, { key: "total", label: "Total" }],
+      function (it) { return twoLine(it.from, it.subject); }) },
   };
   const DEFAULT_LAYOUT = ["clock", "quickask", "places", "routines"];
 
@@ -771,7 +968,7 @@
   }
 
   // ---- tabs -------------------------------------------------------------
-  const renderers = { home: renderHome, locations: renderLocations, settings: renderSettings, schedules: renderSchedules };
+  const renderers = { home: renderHome, locations: renderLocations, settings: renderSettings, schedules: renderSchedules, modules: renderModules };
   function selectTab(name) {
     document.querySelectorAll("nav button").forEach(function (b) { b.classList.toggle("active", b.dataset.tab === name); });
     document.querySelectorAll("main .panel").forEach(function (p) { p.classList.toggle("active", p.id === name); });
@@ -808,16 +1005,43 @@
     // an empty box, and stop the socket from retrying unauthenticated.
     signedOut = true;
     if (socket) { try { socket.close(); } catch (e) { /* gone */ } socket = null; }
-    renderLogin(false);
+    renderLogin();
     showGate();
   }
-  function renderLogin(setup) {
+  function renderSetup() {
+    $("gateTitle").textContent = "Create your account";
     gateBody.textContent = "";
-    if (setup) {
-      gateBody.appendChild(el("p", { class: "note", text: "No account exists yet. On the machine running the hub, create one:" }));
-      gateBody.appendChild(el("p", null, [el("code", { text: "vahub user add <name>" })]));
-      return;
-    }
+    gateBody.appendChild(el("p", { class: "note", text: "This hub has no account yet. Create the first one, it becomes the owner. Afterwards, more accounts are added on the host with vahub user add." }));
+    const user = el("input", { type: "text", placeholder: "username", autocomplete: "username" });
+    const pass = el("input", { type: "password", placeholder: "password (8+ characters)", autocomplete: "new-password" });
+    const confirm = el("input", { type: "password", placeholder: "confirm password", autocomplete: "new-password" });
+    const err = el("div", { class: "err" });
+    const btn = el("button", { class: "btn primary", type: "submit", text: "Create account" });
+    const form = el("form", null, [
+      el("label", { class: "field" }, ["username", user]),
+      el("label", { class: "field" }, ["password", pass]),
+      el("label", { class: "field" }, ["confirm password", confirm]),
+      err,
+      el("div", { class: "row-actions" }, [btn]),
+    ]);
+    form.addEventListener("submit", async function (e) {
+      e.preventDefault();
+      err.textContent = "";
+      if (pass.value !== confirm.value) { err.textContent = "The passwords do not match."; return; }
+      btn.disabled = true;
+      const r = await api("POST", "/api/setup", { username: user.value, password: pass.value });
+      btn.disabled = false;
+      if (r.ok && r.data.ok) { boot(); return; }
+      if (r.status === 409) { err.textContent = "An account already exists. Sign in instead."; renderLogin(); return; }
+      err.textContent = (r.data && r.data.detail) || "Could not create the account.";
+    });
+    gateBody.appendChild(form);
+    user.focus();
+  }
+
+  function renderLogin() {
+    $("gateTitle").textContent = "Sign in";
+    gateBody.textContent = "";
     const user = el("input", { type: "text", placeholder: "username", autocomplete: "username" });
     const pass = el("input", { type: "password", placeholder: "password", autocomplete: "current-password" });
     const err = el("div", { class: "err" });
@@ -845,7 +1069,7 @@
     signedOut = true;
     if (socket) { try { socket.close(); } catch (e) { /* gone */ } socket = null; }
     await api("POST", "/api/logout");
-    renderLogin(false);
+    renderLogin();
     showGate();
   });
 
@@ -856,7 +1080,7 @@
     if (!r.ok) { dropToLogin(); return; }
     const me = r.data || {};
     if (me.auth === false || me.authenticated) { showApp(me); return; }
-    renderLogin(!!me.setup_required);
+    if (me.setup_required) renderSetup(); else renderLogin();
     showGate();
   }
 

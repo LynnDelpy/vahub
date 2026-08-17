@@ -480,7 +480,9 @@ def _pick_exposure(
     if origin:
         origins = [origin]
     elif chosen_host in ("127.0.0.1", "::1", "localhost"):
-        origins = [f"http://localhost:{chosen_port}"]
+        # A loopback install is reached as either name, so allow both rather than
+        # make "works on localhost, 403 on 127.0.0.1" a first-run surprise.
+        origins = [f"http://localhost:{chosen_port}", f"http://127.0.0.1:{chosen_port}"]
     else:
         suggestion = f"http://{_hostname()}:{chosen_port}"
         origins = [
@@ -675,10 +677,11 @@ def _render_config(
                 "modules_dir": str(layout.modules_dir),
             },
         ),
-        "# The hub has no authentication of its own. On 127.0.0.1 only this machine\n"
-        "# can reach it. On any other address, put an authenticating reverse proxy in\n"
-        "# front of it. origin_allowlist is checked on API calls and on WebSocket\n"
-        '# handshakes; "*" turns that check off.\n'
+        "# The built-in login is on by default: open the page and create the first\n"
+        "# account (it becomes the owner), or use `vahub user add`. On 127.0.0.1 only\n"
+        "# this machine can reach the hub; on any other address, also put an\n"
+        "# authenticating reverse proxy in front of it. origin_allowlist is checked on\n"
+        '# API calls and on WebSocket handshakes; "*" turns that check off.\n'
         + _block(
             "web",
             {

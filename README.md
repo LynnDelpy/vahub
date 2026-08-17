@@ -42,23 +42,29 @@ Requires Python 3.12+.
 git clone https://github.com/LynnDelpy/vahub && cd vahub
 python -m venv .venv && . .venv/bin/activate
 pip install -e .
-vahub init          # writes a starter vahub.yaml: loopback, policy deny, mock model
-vahub user add me   # create your login (asks for a password)
-vahub module add time
-vahub doctor
-vahub run           # open http://127.0.0.1:8080 and sign in
+vahub start         # writes a starter config if none exists, then runs
 ```
 
-A fresh install starts, needs no credentials, and can do nothing dangerous. Point the `llm` section at
-a real model, then add rules for what you want the assistant to do.
+`vahub start` binds loopback with a deny policy and the mock model, so a fresh install starts, needs no
+credentials, and can do nothing dangerous. Open `http://127.0.0.1:8080`, create the first account (it
+becomes the owner), and do the rest from the browser: add modules, give them their tokens, and arrange
+your dashboard. Point the `llm` section at a real model, then add policy rules for what you want the
+assistant to do. (`vahub init` plus `vahub run` is the same thing spread across a wizard and a service
+manager, if you prefer that.)
 
 ## The web page
 
-Behind a login (built in, on by default): tabs for **Chat**, **Locations**, **Settings** and
-**Schedules**. Chat is a text box, a microphone, and a card that appears when a destructive action needs
-your approval. You can save places, set preferences, and create cron routines by hand; the assistant can
-do the same through gated tools. Operator concerns (module state, stderr, the audit log) stay on the CLI
-(`vahub doctor`, `vahub audit`).
+Behind a login (built in, on by default): tabs for **Chat**, **Locations**, **Settings**, **Schedules**
+and **Modules**, plus a **Home** dashboard of cards you arrange. Chat is a text box, a microphone, and a
+card that appears when a destructive action needs your approval. You can save places, set preferences,
+create cron routines, and install and configure modules by hand; the assistant can do the same through
+gated tools. Dashboard cards (GitHub, GitLab, email, ...) read a module's own data by calling its
+read-only tools directly, which the owner may do without a policy rule. Operator concerns (stderr, the
+audit log) stay on the CLI (`vahub doctor`, `vahub audit`).
+
+Installing a module from the UI never grants it permission: its tools stay denied until you add a policy
+rule in `vahub.yaml`, which is a file-and-CLI action. So the assistant can never install itself a
+capability, and neither policy nor accounts are editable from the web.
 
 ## The policy gate
 

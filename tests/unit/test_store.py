@@ -87,3 +87,43 @@ async def test_recent_tool_calls_filters_before_the_limit(store) -> None:
     await store.record_tool_call("scheduler", "time", "now", {}, "allow", "ok", 1.0)
     sched = await store.recent_tool_calls(limit=5, principal="scheduler")
     assert [r["principal"] for r in sched] == ["scheduler"]
+
+
+async def test_module_config_roundtrips_and_lists_keys_without_values(store) -> None:
+    # The values feed the supervisor's environment builder; the browser only ever
+    # learns which keys are set, never the token itself.
+    await store.set_module_config("github", "TOKEN", "a-fake-token")
+    await store.set_module_config("github", "BASE_URL", "https://ghe.example")
+    assert await store.module_config("github") == {"TOKEN": "a-fake-token", "BASE_URL": "https://ghe.example"}
+    assert await store.module_config_keys("github") == ["BASE_URL", "TOKEN"]
+
+
+async def test_module_config_is_scoped_per_module(store) -> None:
+    await store.set_module_config("github", "TOKEN", "gh")
+    await store.set_module_config("gitlab", "TOKEN", "gl")
+    snapshot = await store.all_module_config()
+    assert snapshot == {"github": {"TOKEN": "gh"}, "gitlab": {"TOKEN": "gl"}}
+
+
+async def test_module_config_update_and_delete(store) -> None:
+    await store.set_module_config("email", "PASSWORD", "one")
+    await store.set_module_config("email", "PASSWORD", "two")  # upsert, not a second row
+    assert await store.module_config("email") == {"PASSWORD": "two"}
+    assert await store.delete_module_config("email", "PASSWORD") is True
+    assert await store.module_config("email") == {}
+    assert await store.delete_module_config("email", "PASSWORD") is False
+
+
+async def test_delete_all_module_config_drops_every_key(store) -> None:
+    await store.set_module_config("gitlab", "TOKEN", "t")
+    await store.set_module_config("gitlab", "BASE_URL", "u")
+    assert await store.delete_all_module_config("gitlab") == 2
+    assert await store.module_config("gitlab") == {}
+
+
+async def test_module_config_never_leaks_through_app_settings(store) -> None:
+    # A module secret and a plain preference share no table: the preferences view
+    # (all_settings) must never surface a stored token.
+    await store.set_module_config("github", "TOKEN", "a-fake-token")
+    await store.set_setting("units", "metric")
+    assert await store.all_settings() == {"units": "metric"}

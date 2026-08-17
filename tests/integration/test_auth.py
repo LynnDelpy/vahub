@@ -130,3 +130,51 @@ async def test_setup_required_is_false_when_the_only_account_is_disabled(client,
     me = (await client.get("/api/me")).json()
     # An account still exists, it is just disabled: re-enable it, do not "set up".
     assert me["setup_required"] is False
+
+
+# --------------------------------------------------------------------------
+# first-run setup and the owner management surface
+# --------------------------------------------------------------------------
+async def test_first_visitor_setup_creates_the_owner_and_signs_in(client) -> None:
+    r = await client.post(
+        "/api/setup",
+        json={"username": "lynn", "password": "correct horse", "display_name": "Lynn"},
+    )
+    assert r.status_code == 200 and r.json()["ok"] is True
+    # The response signs the new owner straight in, so the guarded API is reachable.
+    assert (await client.get("/api/pending")).status_code == 200
+    me = (await client.get("/api/me")).json()
+    assert me["authenticated"] is True and me["username"] == "lynn"
+    assert me["setup_required"] is False
+
+
+async def test_setup_is_refused_once_an_account_exists(client, rt) -> None:
+    await _add_user(rt)
+    r = await client.post("/api/setup", json={"username": "someone", "password": "correct horse"})
+    assert r.status_code == 409 and r.json()["error"] == "already_set_up"
+
+
+async def test_setup_rejects_a_weak_password(client) -> None:
+    r = await client.post("/api/setup", json={"username": "lynn", "password": "short"})
+    assert r.status_code == 400 and r.json()["error"] == "weak_password"
+
+
+async def test_setup_rejects_a_bad_username(client) -> None:
+    r = await client.post("/api/setup", json={"username": "Bad Name", "password": "correct horse"})
+    assert r.status_code == 400 and r.json()["error"] == "invalid_username"
+
+
+async def test_setup_is_origin_checked(client) -> None:
+    r = await client.post(
+        "/api/setup",
+        json={"username": "lynn", "password": "correct horse"},
+        headers={"origin": "https://evil.example"},
+    )
+    assert r.status_code == 403
+
+
+async def test_module_management_and_tool_calls_require_login(client) -> None:
+    # The owner surface (module management, reading module data for a card) is
+    # guarded by the same login as the rest of the API.
+    assert (await client.get("/api/modules")).status_code == 401
+    assert (await client.post("/api/tools/fake/echo", json={"args": {}})).status_code == 401

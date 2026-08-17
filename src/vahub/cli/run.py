@@ -23,6 +23,7 @@ from pydantic import ValidationError
 from rich.console import Console
 
 from vahub.cli.doctor import exposure_checks
+from vahub.config.loader import load_config
 from vahub.config.models import Config, ConfigError
 
 if TYPE_CHECKING:  # annotation only; a runtime import of main would be a cycle
@@ -57,6 +58,39 @@ def serve(
     _warn_about_exposure(config)
     console.print(f"vahub on [bold]http://{config.web.host}:{config.web.port}[/bold]  (ctrl-c to stop)")
     _serve(config, cli.path)
+
+
+def start(
+    ctx: typer.Context,
+    host: str = typer.Option(None, "--host", help="Override web.host."),
+    port: int = typer.Option(None, "--port", help="Override web.port."),
+) -> None:
+    """Start the hub, writing a starter configuration first if none exists.
+
+    This is the one command a first run needs. With no configuration it writes a
+    safe default (loopback, login on, mock model, deny policy) and starts; then
+    everything else, the owner account, a real model, and modules, is done from
+    the web page. With a configuration already present it is just `vahub serve`.
+    """
+    from vahub.cli.init import default_layout, write_starter_config
+
+    cli: CliState = ctx.obj
+    layout = default_layout()
+    if cli.config_path is not None:
+        layout.config_path = cli.config_path
+        layout.secrets_path = cli.config_path.parent / ".env"
+
+    if not layout.config_path.is_file():
+        write_starter_config(layout)
+        console.print(f"[green]wrote[/green] {layout.config_path} (a starter configuration)")
+
+    config = _apply_overrides(load_config(layout.config_path), host=host, port=port, log_format="console")
+    _warn_about_exposure(config)
+    console.print(
+        f"vahub on [bold]http://{config.web.host}:{config.web.port}[/bold] "
+        "(open it and create your account)  (ctrl-c to stop)"
+    )
+    _serve(config, layout.config_path)
 
 
 # --------------------------------------------------------------------------

@@ -170,18 +170,18 @@ def test_a_websocket_from_an_allowed_origin_receives_the_snapshot(app) -> None:
 @pytest.mark.parametrize(
     "path",
     [
-        "/api/dev/call",  # executing a tool without the agent
-        "/api/modules",  # module states
+        "/api/dev/call",  # executing an arbitrary tool without the agent or the gate
         "/api/modules/fake/logs",  # module stderr
-        "/api/tools",  # the tool catalogue
+        "/api/tools",  # the raw tool catalogue
         "/api/audit",  # the audit log
     ],
 )
 async def test_operator_routes_are_not_exposed(client, path: str) -> None:
-    """The web is the assistant plus a person's own settings, not a debugger:
-    module telemetry, stderr, direct tool invocation and the audit log stay on
-    the CLI. (Saved data and schedules are exposed, but only to a signed-in
-    owner; see test_manage.)"""
+    """The web is the assistant plus an owner's own management, not a debugger:
+    module stderr, the raw tool catalogue, ungated tool invocation and the audit
+    log stay on the CLI. (Module management, saved data and schedules are exposed,
+    but only to a signed-in owner; see test_manage and test_modules. The owner's
+    read-only tool endpoint is /api/tools/<module>/<tool>, not the catalogue.)"""
     for method in ("get", "post"):
         response = await getattr(client, method)(path, headers={"origin": ALLOWED_ORIGIN})
         assert response.status_code in (404, 405), f"{method.upper()} {path} answered {response.status_code}"

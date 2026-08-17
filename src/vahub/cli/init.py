@@ -174,6 +174,37 @@ def _read_etc_timezone() -> str | None:
     return None
 
 
+def write_starter_config(layout: Layout) -> None:
+    """Write a minimal, valid configuration with no questions and no network.
+
+    This is what `vahub start` uses to bootstrap a first run: loopback bind, the
+    built-in login on, the mock model, and a deny-by-default policy. The result
+    starts, needs no credentials, and can do nothing dangerous, so the rest of
+    setup (the owner account, a real model, modules) can be done from the browser.
+    """
+    config = _draft_config(
+        provider="mock",
+        base_url="https://openrouter.ai/api/v1",
+        model="mock",
+        has_key=False,
+        timezone=local_timezone(),
+        layout=layout,
+    )
+    _prepare_directories(layout)
+    web = _pick_exposure(None, None, None, None, interactive=False)
+    text = _render_config(
+        timezone=config.hub.timezone,
+        layout=layout,
+        web=web,
+        provider="mock",
+        base_url="https://openrouter.ai/api/v1",
+        model="mock",
+        has_key=False,
+        policy=_starter_policy({}),
+    )
+    _write_file(layout.config_path, text, 0o644)
+
+
 # --------------------------------------------------------------------------
 # the command
 # --------------------------------------------------------------------------

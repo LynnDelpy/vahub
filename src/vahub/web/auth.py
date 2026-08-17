@@ -23,7 +23,7 @@ from fastapi import APIRouter, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from ..auth import hash_password, needs_rehash, verify_password
+from ..auth import hash_password, needs_rehash, password_error, username_error, verify_password
 from .security import check_origin
 
 if TYPE_CHECKING:
@@ -36,13 +36,19 @@ SESSION_COOKIE = "vahub_session"
 # login endpoint obviously cannot require being logged in; /metrics is scraped by
 # a machine that has no session (it is still origin-checked, and the proxy 404s
 # it for clients).
-_PUBLIC_PATHS = frozenset({"/", "/health", "/ready", "/metrics", "/api/login", "/api/me"})
+_PUBLIC_PATHS = frozenset({"/", "/health", "/ready", "/metrics", "/api/login", "/api/me", "/api/setup"})
 _PUBLIC_PREFIXES = ("/static/",)
 
 
 class LoginBody(BaseModel):
     username: str = Field(min_length=1, max_length=64)
     password: str = Field(min_length=1, max_length=1024)
+
+
+class SetupBody(BaseModel):
+    username: str = Field(min_length=1, max_length=64)
+    password: str = Field(min_length=1, max_length=1024)
+    display_name: str | None = Field(default=None, max_length=80)
 
 
 class _Throttle:
@@ -119,6 +125,44 @@ def build_router(rt: Runtime) -> APIRouter:
                 "display_name": display,
             }
         )
+
+    @router.post("/setup")
+    async def setup(body: SetupBody, request: Request) -> Response:
+        """First-run account creation, straight from the browser. It works only
+        while the hub has no account at all: the first visitor claims the owner
+        account. Once one exists this returns 409, so a stranger who reaches the
+        page later cannot sign themselves up; more accounts are a CLI action."""
+        check_origin(request, rt.config)
+        auth = rt.config.web.auth
+        if not auth.enabled or rt.store is None:
+            return JSONResponse({"ok": False, "error": "auth_disabled"}, status_code=400)
+        if await rt.store.count_users() != 0:
+            return JSONResponse({"ok": False, "error": "already_set_up"}, status_code=409)
+        if (reason := username_error(body.username)) is not None:
+            return JSONResponse({"ok": False, "error": "invalid_username", "detail": reason}, status_code=400)
+        if (reason := password_error(body.password)) is not None:
+            return JSONResponse({"ok": False, "error": "weak_password", "detail": reason}, status_code=400)
+        pw_hash = await asyncio.to_thread(hash_password, body.password)
+        created = await rt.store.create_first_user(body.username, pw_hash, body.display_name)
+        if not created:
+            # Lost a race with another first visitor. Their account now exists,
+            # so this one is not the first: setup is over.
+            return JSONResponse({"ok": False, "error": "already_set_up"}, status_code=409)
+        # Sign the new owner straight in, so setup flows into a working session.
+        now = time.time()
+        sid = secrets.token_urlsafe(32)
+        await rt.store.create_session(sid, body.username, now + auth.session_ttl_s)
+        response = JSONResponse({"ok": True, "username": body.username})
+        response.set_cookie(
+            SESSION_COOKIE,
+            sid,
+            max_age=int(auth.session_ttl_s),
+            httponly=True,
+            samesite="strict",
+            secure=auth.cookie_secure,
+            path="/",
+        )
+        return response
 
     @router.post("/login")
     async def login(body: LoginBody, request: Request) -> Response:

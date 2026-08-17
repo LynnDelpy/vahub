@@ -167,7 +167,24 @@ _V2: tuple[str, ...] = (
     "CREATE INDEX idx_sessions_expires ON sessions(expires_at)",
 )
 
-MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = ((1, _V1), (2, _V2))
+# v3: per-module configuration and secrets set from the web UI. Kept in its own
+# table, never in app_settings, so a module's API token can never leak through
+# the preferences endpoint, which returns every app_settings row. The supervisor
+# reads this to build a module's environment when the host environment does not
+# already provide the key.
+_V3: tuple[str, ...] = (
+    """
+    CREATE TABLE module_config (
+        module      TEXT NOT NULL,
+        key         TEXT NOT NULL,
+        value       TEXT NOT NULL,   -- the config value, often a secret
+        updated_at  REAL NOT NULL,
+        PRIMARY KEY (module, key)
+    )
+    """,
+)
+
+MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = ((1, _V1), (2, _V2), (3, _V3))
 
 SCHEMA_VERSION = MIGRATIONS[-1][0]
 
@@ -495,6 +512,21 @@ class Store:
             (username, password_hash, display_name, time.time()),
         )
 
+    async def create_first_user(self, username: str, password_hash: str, display_name: str | None) -> bool:
+        """Create the very first account, atomically. Returns True only if the
+        account was created; False if any account already existed.
+
+        The web setup ("first visitor claims it") checks for zero accounts and
+        then inserts, and those two steps must be one indivisible action, or two
+        visitors racing at first run could both create an owner. The insert only
+        fires WHERE NOT EXISTS any user, so exactly one caller wins."""
+        cur = await self.db.execute(
+            "INSERT INTO users(username, password_hash, display_name, created_at, disabled)"
+            " SELECT ?,?,?,?,0 WHERE NOT EXISTS (SELECT 1 FROM users)",
+            (username, password_hash, display_name, time.time()),
+        )
+        return bool(cur.rowcount)
+
     async def get_user(self, username: str) -> dict[str, Any] | None:
         cur = await self.db.execute("SELECT * FROM users WHERE username=?", (username,))
         row = await cur.fetchone()
@@ -669,3 +701,42 @@ class Store:
     async def delete_dyn_schedule(self, sid: str) -> bool:
         cur = await self.db.execute("DELETE FROM dyn_schedules WHERE id=?", (sid,))
         return bool(cur.rowcount)
+
+    # --- module configuration (set from the web UI) -----------------------
+    async def module_config(self, module: str) -> dict[str, str]:
+        """Every stored config value for one module, as {KEY: value}. This is the
+        only method that returns the values themselves; it feeds the supervisor
+        building a module's environment, never a response to the browser."""
+        cur = await self.db.execute("SELECT key, value FROM module_config WHERE module=?", (module,))
+        return {row["key"]: row["value"] for row in await cur.fetchall()}
+
+    async def all_module_config(self) -> dict[str, dict[str, str]]:
+        """The whole table as {module: {KEY: value}}, for a startup snapshot."""
+        cur = await self.db.execute("SELECT module, key, value FROM module_config")
+        out: dict[str, dict[str, str]] = {}
+        for row in await cur.fetchall():
+            out.setdefault(row["module"], {})[row["key"]] = row["value"]
+        return out
+
+    async def module_config_keys(self, module: str) -> list[str]:
+        """The names of the keys set for a module, without the values. This is
+        what the UI may see: it can show that a token is set without revealing it."""
+        cur = await self.db.execute("SELECT key FROM module_config WHERE module=? ORDER BY key", (module,))
+        return [row["key"] for row in await cur.fetchall()]
+
+    async def set_module_config(self, module: str, key: str, value: str) -> None:
+        await self.db.execute(
+            "INSERT INTO module_config(module, key, value, updated_at) VALUES(?,?,?,?)"
+            " ON CONFLICT(module, key) DO UPDATE SET value=excluded.value,"
+            " updated_at=excluded.updated_at",
+            (module, key, value, time.time()),
+        )
+
+    async def delete_module_config(self, module: str, key: str) -> bool:
+        cur = await self.db.execute("DELETE FROM module_config WHERE module=? AND key=?", (module, key))
+        return bool(cur.rowcount)
+
+    async def delete_all_module_config(self, module: str) -> int:
+        """Drop every stored value for a module, e.g. when it is uninstalled."""
+        cur = await self.db.execute("DELETE FROM module_config WHERE module=?", (module,))
+        return cur.rowcount if cur.rowcount and cur.rowcount > 0 else 0

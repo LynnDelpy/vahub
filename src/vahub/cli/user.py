@@ -9,7 +9,6 @@ print or recover a password, only to replace it.
 from __future__ import annotations
 
 import asyncio
-import re
 from collections.abc import Awaitable, Callable
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
@@ -18,7 +17,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from vahub.auth import hash_password
+from vahub.auth import MIN_PASSWORD_LEN, USERNAME_RE, hash_password
 
 if TYPE_CHECKING:
     from vahub.config.models import Config
@@ -31,9 +30,6 @@ app = typer.Typer(
 )
 console = Console()
 err = Console(stderr=True)
-
-USERNAME_RE = re.compile(r"^[a-z0-9][a-z0-9_.-]{1,31}$")
-MIN_PASSWORD_LEN = 8
 
 
 def _config(ctx: typer.Context) -> Config:

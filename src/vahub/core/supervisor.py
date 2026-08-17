@@ -103,10 +103,31 @@ class Supervisor:
         self._tasks: dict[str, asyncio.Task[None]] = {}
         self._side_tasks: set[asyncio.Task[None]] = set()
         self._stopping = False
+        # A snapshot of module configuration set through the web UI (and stored in
+        # the database), consulted when the host environment does not already
+        # provide a declared key. Kept here so _child_env and discover stay
+        # synchronous; the runtime loads it before discovery and the web layer
+        # keeps it current.
+        self._db_config: dict[str, dict[str, str]] = {}
 
     # --- discovery ---------------------------------------------------------
     def venv_path(self, name: str) -> Path:
         return self._state_dir / "modules" / name / "venv"
+
+    def _manifest_path(self, name: str) -> Path:
+        return self._modules_dir / f"{name}.yaml"
+
+    def set_db_config(self, config: dict[str, dict[str, str]]) -> None:
+        """Replace the whole snapshot of UI-provided module configuration."""
+        self._db_config = {name: dict(values) for name, values in config.items()}
+
+    def update_module_config(self, name: str, config: dict[str, str]) -> None:
+        """Update one module's stored configuration in the snapshot. Call
+        apply_config() afterwards to (re)start or stop the module accordingly."""
+        if config:
+            self._db_config[name] = dict(config)
+        else:
+            self._db_config.pop(name, None)
 
     def discover(self) -> None:
         """Read every manifest without spawning anything, so the dashboard can
@@ -119,30 +140,44 @@ class Supervisor:
             log.warning("modules_dir_missing", path=str(self._modules_dir))
             return
         for path in sorted(self._modules_dir.glob("*.yaml")):
-            try:
-                manifest = Manifest.from_file(path)
-                expanded = manifest.expand(
-                    venv=self.venv_path(manifest.name),
-                    state=self._state_dir,
-                    config=self._config_dir,
-                )
-            except Exception as e:
-                log.error("manifest_invalid", path=str(path), error=str(e))
+            mod = self._build_module(path)
+            if mod is None:
                 continue
-            mod = Module(manifest=expanded)
-            mod.missing_config = [
-                k
-                for k in expanded.config.required
-                if resolve_config_value(expanded.name, k, os.environ) is None
-            ]
-            if mod.missing_config:
-                mod.state = State.UNCONFIGURED
-                mod.last_error = f"missing config: {', '.join(mod.missing_config)}"
-            else:
-                mod.state = State.STOPPED
-            self.modules[expanded.name] = mod
-            metrics.set_module_state(expanded.name, mod.state.value)
-            log.info("module_discovered", module=expanded.name, state=mod.state.value)
+            mod.state = State.UNCONFIGURED if mod.missing_config else State.STOPPED
+            self.modules[mod.name] = mod
+            metrics.set_module_state(mod.name, mod.state.value)
+            log.info("module_discovered", module=mod.name, state=mod.state.value)
+
+    def _build_module(self, path: Path) -> Module | None:
+        """Read and expand one manifest into a Module with its config status, or
+        None if the manifest cannot be read or validated (which must not stop the
+        other modules)."""
+        try:
+            manifest = Manifest.from_file(path)
+            expanded = manifest.expand(
+                venv=self.venv_path(manifest.name),
+                state=self._state_dir,
+                config=self._config_dir,
+            )
+        except Exception as e:
+            log.error("manifest_invalid", path=str(path), error=str(e))
+            return None
+        mod = Module(manifest=expanded)
+        self._refresh_config(mod)
+        return mod
+
+    def _refresh_config(self, mod: Module) -> None:
+        """Recompute which required keys a module is still missing, from the host
+        environment and the stored UI configuration together."""
+        stored = self._db_config.get(mod.name, {})
+        mod.missing_config = [
+            k
+            for k in mod.manifest.config.required
+            if resolve_config_value(mod.name, k, os.environ, stored) is None
+        ]
+        mod.last_error = (
+            f"missing config: {', '.join(mod.missing_config)}" if mod.missing_config else mod.last_error
+        )
 
     # --- lifecycle ---------------------------------------------------------
     async def start(self) -> None:
@@ -163,6 +198,88 @@ class Supervisor:
             return True
         if name not in self._tasks or self._tasks[name].done():
             self._tasks[name] = asyncio.create_task(self._supervise(mod), name=f"supervise:{name}")
+        return True
+
+    def _running(self, name: str) -> bool:
+        task = self._tasks.get(name)
+        return task is not None and not task.done()
+
+    async def load_module(self, name: str) -> bool:
+        """Bring a newly installed module into a running hub without a restart.
+
+        Reads its manifest, adds it, and starts it if it is fully configured; a
+        module that still needs a token is added in the unconfigured state and
+        will start the moment apply_config() sees the token arrive."""
+        if self._running(name):
+            # Already live: treat this as a reload of its configuration.
+            return await self.apply_config(name)
+        path = self._manifest_path(name)
+        if not path.is_file():
+            return False
+        mod = self._build_module(path)
+        if mod is None:
+            return False
+        self.modules[mod.name] = mod
+        if mod.missing_config or self._stopping:
+            self._set_state(mod, State.UNCONFIGURED if mod.missing_config else State.STOPPED)
+            return True
+        self._set_state(mod, State.STARTING)
+        self._tasks[mod.name] = asyncio.create_task(self._supervise(mod), name=f"supervise:{mod.name}")
+        return True
+
+    async def apply_config(self, name: str) -> bool:
+        """React to a change in a module's stored configuration: start it if it
+        is now ready, restart it if it is running so it picks up the new values,
+        or stop it if it lost a required key."""
+        mod = self.modules.get(name)
+        if mod is None:
+            return await self.load_module(name)
+        self._refresh_config(mod)
+        if mod.missing_config:
+            if self._running(name):
+                await self.stop_module(name)
+            self._set_state(mod, State.UNCONFIGURED)
+            return True
+        if self._running(name):
+            return await self.restart(name)  # bounce it: new environment on respawn
+        if self._stopping:
+            return False
+        mod.restarts = 0
+        mod.last_error = None
+        self._set_state(mod, State.STARTING)
+        self._tasks[name] = asyncio.create_task(self._supervise(mod), name=f"supervise:{name}")
+        return True
+
+    async def stop_module(self, name: str) -> bool:
+        """Stop one module: cancel its supervise loop, kill the process, close the
+        client. The module row stays so the UI still lists it as stopped; use
+        remove_module to drop it entirely."""
+        mod = self.modules.get(name)
+        if mod is None:
+            return False
+        task = self._tasks.pop(name, None)
+        if task is not None:
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await task
+        if mod.proc is not None and mod.proc.returncode is None:
+            await self._kill(mod.proc)
+        if mod.client is not None:
+            await mod.client.close()
+            mod.client = None
+        if mod.state not in (State.UNCONFIGURED, State.FAILED):
+            self._set_state(mod, State.STOPPED)
+        return True
+
+    async def remove_module(self, name: str) -> bool:
+        """Stop a module and forget it entirely. The caller deletes the manifest
+        and the venv on disk; this only detaches it from the running hub."""
+        if name not in self.modules:
+            return False
+        await self.stop_module(name)
+        self.modules.pop(name, None)
+        self._tasks.pop(name, None)
+        self._db_config.pop(name, None)
         return True
 
     async def _supervise(self, mod: Module) -> None:
@@ -355,6 +472,7 @@ class Supervisor:
             "PYTHONUNBUFFERED": "1",
         }
         scope = module_env_prefix(manifest.name)
+        stored = self._db_config.get(manifest.name, {})
         for key in (*manifest.config.required, *manifest.config.optional):
             scoped = os.environ.get(scope + key)
             if scoped is not None:
@@ -373,6 +491,13 @@ class Supervisor:
                         f"scope this secret to the {manifest.name!r} module."
                     ),
                 )
+                continue
+            # Set in the web UI and stored in the database. This is already
+            # scoped to one module, so it is used without the shared-secret
+            # warning above.
+            stored_value = stored.get(key)
+            if stored_value is not None:
+                env[key] = stored_value
         if manifest.runtime.pythonpath:  # only for modules installed from a checkout
             env["PYTHONPATH"] = manifest.runtime.pythonpath
         if manifest.runtime.user:

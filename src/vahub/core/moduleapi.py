@@ -91,6 +91,72 @@ class ModuleAPI:
             log.error("moduleapi_confirm_error", pending_id=pending_id, error=str(e))
             return {"ok": False, "error": "internal", "detail": str(e)}
 
+    async def call_read(
+        self,
+        module: str,
+        tool: str,
+        args: dict[str, Any] | None = None,
+        subject: str | None = None,
+        timeout_s: float = DEFAULT_TIMEOUT_S,
+    ) -> dict[str, Any]:
+        """A signed-in owner reading their own data through a module's read tool.
+
+        The policy gate governs the agent and the scheduler, not what an
+        authenticated owner does from the web UI (the same principle by which the
+        owner may edit locations and settings directly). This path is therefore
+        not gated, so a dashboard card can show unread mail without a policy rule.
+        It is restricted to read-class tools, however, so it can never be a write
+        or a destructive action, and every call is still audited as the acting
+        user."""
+        try:
+            return await self._call_read(module, tool, args, subject, timeout_s)
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            log.error("moduleapi_read_error", module=module, tool=tool, error=str(e))
+            return {"ok": False, "error": "internal", "detail": str(e)}
+
+    async def _call_read(
+        self,
+        module: str,
+        tool: str,
+        args: dict[str, Any] | None,
+        subject: str | None,
+        timeout_s: float,
+    ) -> dict[str, Any]:
+        if args is None:
+            args = {}
+        if not isinstance(args, dict):
+            return {"ok": False, "error": "bad_args", "detail": "args must be an object"}
+        if not isinstance(tool, str) or not tool:
+            return {"ok": False, "error": "bad_tool", "detail": "tool must be a name"}
+        mod = self._sup.modules.get(module)
+        if mod is None:
+            return {"ok": False, "error": "unknown_module", "detail": module}
+        if tool.startswith("__"):
+            return {"ok": False, "error": "reserved_tool", "detail": tool}
+        if not self._is_read_tool(mod, tool):
+            # Anything the module or the policy considers write or destructive is
+            # refused here; the owner uses the assistant (which is gated) for those.
+            return {"ok": False, "error": "not_readonly", "detail": tool}
+        if mod.state is not State.READY or mod.client is None:
+            return {"ok": False, "error": "module_not_ready", "detail": mod.state.value}
+        if not any(t.get("name") == tool for t in mod.tools):
+            return {"ok": False, "error": "unknown_tool", "detail": tool}
+        return await self._dispatch(mod, tool, args, timeout_s, subject or "user", "allow")
+
+    def _is_read_tool(self, mod: Module, tool: str) -> bool:
+        """A tool is read-only for the owner path only if BOTH the module's
+        manifest declares it read AND the policy has not classified it as
+        anything stronger. The manifest is the module's own claim (advisory), so
+        an operator rule that marks a tool destructive is honoured even though the
+        gate is bypassed, and a module cannot get a write tool called by
+        describing it as a read."""
+        spec = mod.manifest.tools.get(tool)
+        manifest_read = spec is not None and spec.cls == "read"
+        policy_read = self._gate is None or self._gate.cls_for(mod.name, tool) == "read"
+        return manifest_read and policy_read
+
     async def cancel(self, pending_id: str) -> dict[str, Any]:
         if self._store is None:
             return {"ok": False, "error": "no_store"}

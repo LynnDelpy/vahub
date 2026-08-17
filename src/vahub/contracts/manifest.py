@@ -70,17 +70,33 @@ def module_env_prefix(module_name: str) -> str:
     return "VAHUB_MOD_" + module_name.upper().replace("-", "_") + "_"
 
 
-def resolve_config_value(module_name: str, key: str, environ: Mapping[str, str]) -> str | None:
+def resolve_config_value(
+    module_name: str,
+    key: str,
+    environ: Mapping[str, str],
+    stored: Mapping[str, str] | None = None,
+) -> str | None:
     """The value a module actually receives for a declared config key. The
     per-module ``VAHUB_MOD_<NAME>_<KEY>`` form takes precedence over a bare
-    ``<KEY>``. Both the supervisor (deciding whether a module is configured and
-    building its environment) and the CLI (reporting missing config) must agree
-    on this, or a module configured the scoped way is wrongly called
-    unconfigured and never started."""
+    ``<KEY>``, and both take precedence over a value ``stored`` for this module
+    in the database (what the web UI writes). Both the supervisor (deciding
+    whether a module is configured and building its environment) and the CLI
+    (reporting missing config) must agree on this, or a module configured one way
+    is wrongly called unconfigured and never started.
+
+    The environment wins over the database on purpose: an operator who exports a
+    secret for an incident should not be silently overridden by an older value a
+    web form left behind. The database is the fallback that makes web-first
+    configuration work without touching the host environment at all."""
     scoped = environ.get(module_env_prefix(module_name) + key)
     if scoped is not None:
         return scoped
-    return environ.get(key)
+    bare = environ.get(key)
+    if bare is not None:
+        return bare
+    if stored is not None:
+        return stored.get(key)
+    return None
 
 
 MANIFEST_SCHEMA_VERSION = 1

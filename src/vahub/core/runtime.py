@@ -125,6 +125,10 @@ class Runtime:
             modules_dir=str(self.config.hub.modules_dir),
             llm_provider=self.config.llm.provider,
         )
+        # Module configuration set through the web UI lives in the database. Load
+        # it before discovery so a module configured that way counts as ready and
+        # starts on this boot, exactly as an environment-configured one does.
+        self.supervisor.set_db_config(await self.store.all_module_config())
         self.supervisor.discover()
         await self.supervisor.start()
         # After start(): the built-in module is always ready and has no process,

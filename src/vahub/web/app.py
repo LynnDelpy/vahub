@@ -29,6 +29,7 @@ from ..__about__ import __version__
 from ..core import metrics
 from . import api, manage, ws
 from . import auth as web_auth
+from . import modules as web_modules
 from .security import check_origin
 
 if TYPE_CHECKING:
@@ -159,6 +160,7 @@ def create_app(rt: Runtime) -> FastAPI:
     app.include_router(web_auth.build_router(rt), prefix="/api")
     app.include_router(api.build_router(rt))
     app.include_router(manage.build_router(rt), prefix="/api")
+    app.include_router(web_modules.build_router(rt), prefix="/api")
     app.include_router(ws.build_router(rt))
     return app
 

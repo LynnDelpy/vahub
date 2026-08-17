@@ -28,6 +28,14 @@ if TYPE_CHECKING:
 
 _NAME = r"^[a-z0-9][a-z0-9_.-]{0,39}$"
 _KEY = r"^[a-z0-9][a-z0-9_.:-]{0,59}$"
+_MODULE = r"^[a-z][a-z0-9_-]{0,63}$"
+_TOOL = r"^[a-zA-Z_][a-zA-Z0-9_]{0,63}$"
+
+
+class ToolCallBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    args: dict[str, Any] = Field(default_factory=dict)
+    timeout_s: float = Field(default=10.0, gt=0, le=60)
 
 
 class LocationBody(BaseModel):
@@ -112,6 +120,27 @@ def build_router(rt: Runtime) -> APIRouter:
     async def delete_setting(request: Request, key: str = Path(pattern=_KEY)) -> JSONResponse:
         check_origin(request, rt.config)
         return JSONResponse({"ok": await rt.store.delete_setting(key)})
+
+    # --- reading module data (for dashboard cards) ------------------------
+    @router.post("/tools/{module}/{tool}")
+    async def call_read_tool(
+        body: ToolCallBody,
+        request: Request,
+        module: str = Path(pattern=_MODULE),
+        tool: str = Path(pattern=_TOOL),
+    ) -> JSONResponse:
+        """Let the signed-in owner run a module's read-only tool directly, which
+        is what backs the dashboard cards (unread mail, open PRs, and so on).
+
+        It is origin-checked like any write even though it only reads, because it
+        reaches a module and should not be triggerable cross-site. The gate is
+        bypassed here on purpose (the owner is not the agent), but moduleapi
+        restricts this path to read-class tools, so it can never be a write or a
+        destructive action."""
+        check_origin(request, rt.config)
+        who = await web_auth.current_username(request, rt)
+        result = await rt.moduleapi.call_read(module, tool, body.args, subject=who, timeout_s=body.timeout_s)
+        return JSONResponse(result, status_code=200 if result.get("ok") else 400)
 
     # --- schedules --------------------------------------------------------
     @router.get("/schedules")

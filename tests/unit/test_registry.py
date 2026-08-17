@@ -50,8 +50,9 @@ INDEX = {
         "timer": {
             "description": "Kitchen timers",
             "tags": ["utility"],
-            "versions": {"1.0.0": {"source": {"type": "pypi", "package": "vahub-mod-timer",
-                "version": "1.0.0"}}},
+            "versions": {
+                "1.0.0": {"source": {"type": "pypi", "package": "vahub-mod-timer", "version": "1.0.0"}}
+            },
         },
     },
 }

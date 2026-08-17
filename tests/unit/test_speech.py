@@ -17,9 +17,7 @@ from vahub.speech.openai_compat import OpenAICompatSTT, OpenAICompatTTS
 
 
 def _mock(adapter: Any, responder) -> None:
-    adapter._client = httpx.AsyncClient(
-        transport=httpx.MockTransport(responder), base_url="http://mock"
-    )
+    adapter._client = httpx.AsyncClient(transport=httpx.MockTransport(responder), base_url="http://mock")
 
 
 def _stt() -> OpenAICompatSTT:

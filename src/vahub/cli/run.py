@@ -53,9 +53,7 @@ def serve(
 ) -> None:
     """Run the hub with human readable logging, for working on it."""
     cli: CliState = ctx.obj
-    config = _apply_overrides(
-        cli.load(), host=host, port=port, log_level=log_level, log_format="console"
-    )
+    config = _apply_overrides(cli.load(), host=host, port=port, log_level=log_level, log_format="console")
     _warn_about_exposure(config)
     console.print(f"vahub on [bold]http://{config.web.host}:{config.web.port}[/bold]  (ctrl-c to stop)")
     _serve(config, cli.path)

@@ -129,8 +129,7 @@ def create_app(rt: Runtime) -> FastAPI:
         # state each is in is operator information, and this endpoint is reachable
         # by anyone who can reach the hub.
         settled = not any(
-            str(getattr(m.state, "value", m.state)) == "starting"
-            for m in rt.supervisor.modules.values()
+            str(getattr(m.state, "value", m.state)) == "starting" for m in rt.supervisor.modules.values()
         )
         return JSONResponse({"ready": settled}, status_code=200 if settled else 503)
 

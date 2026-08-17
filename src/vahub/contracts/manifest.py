@@ -163,9 +163,7 @@ class Manifest(Strict):
     @classmethod
     def _valid_name(cls, v: str) -> str:
         if not NAME_RE.match(v):
-            raise ValueError(
-                f"invalid module name {v!r}: lowercase letters, digits, _ and - only"
-            )
+            raise ValueError(f"invalid module name {v!r}: lowercase letters, digits, _ and - only")
         return v
 
     @field_validator("tools")
@@ -200,9 +198,7 @@ class Manifest(Strict):
         return Manifest.model_validate(data)
 
     def to_yaml(self) -> str:
-        return yaml.safe_dump(
-            self.model_dump(by_alias=True, exclude_none=True), sort_keys=False, width=100
-        )
+        return yaml.safe_dump(self.model_dump(by_alias=True, exclude_none=True), sort_keys=False, width=100)
 
 
 def load_manifests(directory: Path) -> dict[str, Manifest]:

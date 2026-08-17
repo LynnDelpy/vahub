@@ -81,12 +81,14 @@ _NUM = {"type": "number"}
 
 TOOL_DEFS: list[tuple[str, str, str, dict[str, Any]]] = [
     (
-        "list_locations", "read",
+        "list_locations",
+        "read",
         "List the saved places (home, work, ...) with their coordinates.",
         _obj({}),
     ),
     (
-        "set_location", "write",
+        "set_location",
+        "write",
         "Save or update a named place. Provide coordinates or an address.",
         _obj(
             {
@@ -100,41 +102,47 @@ TOOL_DEFS: list[tuple[str, str, str, dict[str, Any]]] = [
         ),
     ),
     (
-        "delete_location", "write",
+        "delete_location",
+        "write",
         "Delete a saved place by name.",
         _obj({"name": {**_STR, "maxLength": 40}}, required=["name"]),
     ),
     (
-        "remember", "write",
-        "Remember a fact or preference under a key, e.g. units=metric or "
-        "anniversary=2018-06-01.",
+        "remember",
+        "write",
+        "Remember a fact or preference under a key, e.g. units=metric or anniversary=2018-06-01.",
         _obj(
             {"key": {**_STR, "maxLength": 60}, "value": {**_STR, "maxLength": 500}},
             required=["key", "value"],
         ),
     ),
     (
-        "recall", "read",
+        "recall",
+        "read",
         "Recall a single remembered value by key.",
         _obj({"key": {**_STR, "maxLength": 60}}, required=["key"]),
     ),
     (
-        "list_memory", "read",
+        "list_memory",
+        "read",
         "List everything the assistant has been asked to remember.",
         _obj({}),
     ),
     (
-        "forget", "write",
+        "forget",
+        "write",
         "Forget a remembered key.",
         _obj({"key": {**_STR, "maxLength": 60}}, required=["key"]),
     ),
     (
-        "list_schedules", "read",
+        "list_schedules",
+        "read",
         "List the recurring routines, both file-defined and runtime-created.",
         _obj({}),
     ),
     (
-        "create_schedule", "write",
+        "create_schedule",
+        "write",
         "Create a recurring routine that calls one tool on a cron schedule. It "
         "runs unattended as the scheduler, so it can only do what the scheduler "
         "is allowed to do.",
@@ -150,12 +158,14 @@ TOOL_DEFS: list[tuple[str, str, str, dict[str, Any]]] = [
         ),
     ),
     (
-        "delete_schedule", "write",
+        "delete_schedule",
+        "write",
         "Delete a runtime-created schedule by id.",
         _obj({"id": {**_STR, "maxLength": 40}}, required=["id"]),
     ),
     (
-        "set_schedule_enabled", "write",
+        "set_schedule_enabled",
+        "write",
         "Enable or disable a runtime-created schedule.",
         _obj(
             {"id": {**_STR, "maxLength": 40}, "enabled": {"type": "boolean"}},
@@ -244,11 +254,7 @@ def _handlers(store: Store, scheduler: Scheduler) -> dict[str, Handler]:
 
     async def list_memory(_: dict[str, Any]) -> Any:
         prefix = "memory:"
-        items = {
-            k[len(prefix):]: v
-            for k, v in (await store.all_settings()).items()
-            if k.startswith(prefix)
-        }
+        items = {k[len(prefix) :]: v for k, v in (await store.all_settings()).items() if k.startswith(prefix)}
         return {"memory": items}
 
     async def forget(a: dict[str, Any]) -> Any:
@@ -312,8 +318,7 @@ def build_core_module(store: Store, scheduler: Scheduler) -> Module:
         }
     )
     tools = [
-        {"name": name, "description": desc, "inputSchema": schema}
-        for name, _cls, desc, schema in TOOL_DEFS
+        {"name": name, "description": desc, "inputSchema": schema} for name, _cls, desc, schema in TOOL_DEFS
     ]
     return Module(
         manifest=manifest,

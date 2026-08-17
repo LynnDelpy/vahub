@@ -161,9 +161,7 @@ async def test_a_destructive_call_becomes_a_pending_confirmation(
     await ready()
     before = await calls_served(api)
 
-    result = await api.call(
-        module="fake", tool="secretive", args={"secret": "hunter2"}, principal="agent"
-    )
+    result = await api.call(module="fake", tool="secretive", args={"secret": "hunter2"}, principal="agent")
 
     assert result["ok"] is False
     assert result["error"] == "confirmation_required"
@@ -183,9 +181,7 @@ async def test_confirming_executes_the_arguments_that_were_approved(
     write_manifest()
     await ready()
     args = {"secret": "hunter2"}
-    pending_id = (
-        await api.call(module="fake", tool="secretive", args=args, principal="agent")
-    )["pending_id"]
+    pending_id = (await api.call(module="fake", tool="secretive", args=args, principal="agent"))["pending_id"]
 
     # Whatever the model does to its own copy afterwards is irrelevant: the
     # frozen arguments are what was shown to the human.
@@ -201,9 +197,9 @@ async def test_confirming_executes_the_arguments_that_were_approved(
 async def test_a_confirmation_can_only_be_spent_once(write_manifest, ready, api) -> None:
     write_manifest()
     await ready()
-    pending_id = (
-        await api.call(module="fake", tool="secretive", args={"secret": "a"}, principal="agent")
-    )["pending_id"]
+    pending_id = (await api.call(module="fake", tool="secretive", args={"secret": "a"}, principal="agent"))[
+        "pending_id"
+    ]
 
     assert (await api.confirm(pending_id))["ok"] is True
     second = await api.confirm(pending_id)
@@ -219,14 +215,12 @@ async def test_an_unknown_confirmation_is_refused(write_manifest, ready, api) ->
 
 async def test_a_confirmation_expires(construct, write_manifest, ready, supervisor, gate, store, bus) -> None:
     # A prompt left on a screen overnight is not consent given now.
-    short = construct(
-        ModuleAPI, supervisor=supervisor, gate=gate, store=store, bus=bus, confirm_ttl_s=0.05
-    )
+    short = construct(ModuleAPI, supervisor=supervisor, gate=gate, store=store, bus=bus, confirm_ttl_s=0.05)
     write_manifest()
     await ready()
-    pending_id = (
-        await short.call(module="fake", tool="secretive", args={"secret": "a"}, principal="agent")
-    )["pending_id"]
+    pending_id = (await short.call(module="fake", tool="secretive", args={"secret": "a"}, principal="agent"))[
+        "pending_id"
+    ]
 
     await asyncio.sleep(0.2)
     result = await short.confirm(pending_id)
@@ -238,9 +232,9 @@ async def test_a_confirmation_expires(construct, write_manifest, ready, supervis
 async def test_confirmation_records_who_confirmed(write_manifest, ready, api, store) -> None:
     write_manifest()
     await ready()
-    pending_id = (
-        await api.call(module="fake", tool="secretive", args={"secret": "a"}, principal="agent")
-    )["pending_id"]
+    pending_id = (await api.call(module="fake", tool="secretive", args={"secret": "a"}, principal="agent"))[
+        "pending_id"
+    ]
     await api.confirm(pending_id, subject="lucia")
 
     executed = [r for r in await audit(store) if r["tool"] == "secretive" and r["result"] == "ok"]

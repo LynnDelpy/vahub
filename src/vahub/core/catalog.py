@@ -80,7 +80,5 @@ class Catalog:
         """Modules the agent should be told about, so it says "the lights are
         unreachable" instead of inventing a reason for a missing answer."""
         return sorted(
-            mod.name
-            for mod in self._sup.modules.values()
-            if mod.state in (State.DEGRADED, State.FAILED)
+            mod.name for mod in self._sup.modules.values() if mod.state in (State.DEGRADED, State.FAILED)
         )

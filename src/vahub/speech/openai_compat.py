@@ -59,9 +59,7 @@ class OpenAICompatSTT:
         suffix = _EXTENSIONS.get(mime.split(";")[0].strip().lower(), "webm")
         files = {"file": (f"audio.{suffix}", audio, mime)}
         try:
-            resp = await self._client.post(
-                "/audio/transcriptions", files=files, data={"model": self._model}
-            )
+            resp = await self._client.post("/audio/transcriptions", files=files, data={"model": self._model})
             resp.raise_for_status()
             payload = resp.json()
         except httpx.HTTPError as e:

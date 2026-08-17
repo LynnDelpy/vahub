@@ -128,9 +128,7 @@ async def test_health_probes_do_not_overlap_a_tool_call(write_manifest, ready) -
 # --------------------------------------------------------------------------
 # a module that misbehaves
 # --------------------------------------------------------------------------
-async def test_a_result_that_is_not_an_object_does_not_break_the_connection(
-    write_manifest, ready
-) -> None:
+async def test_a_result_that_is_not_an_object_does_not_break_the_connection(write_manifest, ready) -> None:
     write_manifest()
     mod = await ready()
 
@@ -262,9 +260,7 @@ async def test_a_module_announcing_no_tools_is_not_usable(
     assert mod.state != State.READY
 
 
-async def test_a_module_missing_its_configuration_is_never_spawned(
-    write_manifest, supervisor, spawn
-) -> None:
+async def test_a_module_missing_its_configuration_is_never_spawned(write_manifest, supervisor, spawn) -> None:
     write_manifest("needsconf", config={"required": ["NOT_IN_THE_ENVIRONMENT"], "optional": []})
     await spawn()
     mod = supervisor.modules["needsconf"]

@@ -52,12 +52,13 @@ def audit(
     # The filters are applied in the query, before the limit, so `--denied -n 50`
     # returns the 50 most recent denials rather than the denials that happen to
     # be among the 50 most recent calls.
-    rows = asyncio.run(
-        _read(config, limit, principal=principal or None, decision="deny" if denied else None)
-    )
+    rows = asyncio.run(_read(config, limit, principal=principal or None, decision="deny" if denied else None))
 
     if as_json:
-        console.print_json(json.dumps(rows, default=str))
+        # Machine-readable output: plain, uncoloured JSON. Rich's print_json
+        # would syntax-highlight it, and under FORCE_COLOR (or any terminal)
+        # the ANSI codes make it unparseable to whatever is consuming it.
+        print(json.dumps(rows, default=str, indent=2))
         return
     if not rows:
         console.print("[dim]nothing recorded yet[/dim]")

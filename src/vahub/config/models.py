@@ -244,9 +244,7 @@ class PolicyConfig(Strict):
             )
         if "destructive" in agent.confirm:
             return self
-        reachable = [
-            key for key in destructive if not any(fnmatch(key, pat) for pat in agent.deny)
-        ]
+        reachable = [key for key in destructive if not any(fnmatch(key, pat) for pat in agent.deny)]
         if reachable:
             raise ValueError(
                 "the 'agent' principal can invoke destructive tools without confirmation "
@@ -329,9 +327,7 @@ def _resolve_scalar(value: str, *, strict: bool) -> str:
         if default is not None:
             return default
         if strict:
-            raise ConfigError(
-                f"config references ${{{ref}}} but that environment variable is not set"
-            )
+            raise ConfigError(f"config references ${{{ref}}} but that environment variable is not set")
         return ""
 
     return _REF.sub(repl, value)

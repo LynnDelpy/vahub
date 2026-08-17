@@ -130,9 +130,7 @@ def build_router(rt: Runtime) -> APIRouter:
         now = time.time()
         key = body.username.lower()
         if throttle.locked(key, now):
-            return JSONResponse(
-                {"ok": False, "error": "too_many_attempts"}, status_code=429
-            )
+            return JSONResponse({"ok": False, "error": "too_many_attempts"}, status_code=429)
 
         user = await rt.store.get_user(body.username)
         # Verify even when the user is missing, against a throwaway hash, so the

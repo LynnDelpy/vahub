@@ -52,8 +52,19 @@ PROJECT_MARKERS = ("pyproject.toml", "setup.py", "setup.cfg")
 # Copied source trees keep only what is needed to build and to read the
 # manifest; the rest is noise that would be installed and then never used.
 COPY_IGNORE = shutil.ignore_patterns(
-    ".git", ".hg", ".svn", "__pycache__", "*.pyc", ".venv", "venv",
-    ".tox", ".nox", ".mypy_cache", ".pytest_cache", ".ruff_cache", "node_modules",
+    ".git",
+    ".hg",
+    ".svn",
+    "__pycache__",
+    "*.pyc",
+    ".venv",
+    "venv",
+    ".tox",
+    ".nox",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".ruff_cache",
+    "node_modules",
 )
 
 DEFAULT_STEP_TIMEOUT_S = 600.0
@@ -264,9 +275,7 @@ class Installer:
                 venv = staging / "venv"
                 self._create_venv(venv)
                 target = (
-                    f"{source.package}=={source.version}"
-                    if isinstance(source, PypiSource)
-                    else str(tree)
+                    f"{source.package}=={source.version}" if isinstance(source, PypiSource) else str(tree)
                 )
                 self._install_into_venv(venv, [target])
             else:
@@ -665,11 +674,28 @@ class Installer:
             "PYTHONDONTWRITEBYTECODE": "1",
         }
         passthrough = (
-            "SSL_CERT_FILE", "SSL_CERT_DIR", "REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE",
-            "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "no_proxy",
-            "PIP_INDEX_URL", "PIP_EXTRA_INDEX_URL", "PIP_CACHE_DIR", "PIP_FIND_LINKS",
-            "UV_CACHE_DIR", "UV_INDEX_URL", "UV_EXTRA_INDEX_URL", "UV_PYTHON",
-            "XDG_CACHE_HOME", "TMPDIR", "SSH_AUTH_SOCK", "GIT_SSH_COMMAND",
+            "SSL_CERT_FILE",
+            "SSL_CERT_DIR",
+            "REQUESTS_CA_BUNDLE",
+            "CURL_CA_BUNDLE",
+            "HTTP_PROXY",
+            "HTTPS_PROXY",
+            "NO_PROXY",
+            "http_proxy",
+            "https_proxy",
+            "no_proxy",
+            "PIP_INDEX_URL",
+            "PIP_EXTRA_INDEX_URL",
+            "PIP_CACHE_DIR",
+            "PIP_FIND_LINKS",
+            "UV_CACHE_DIR",
+            "UV_INDEX_URL",
+            "UV_EXTRA_INDEX_URL",
+            "UV_PYTHON",
+            "XDG_CACHE_HOME",
+            "TMPDIR",
+            "SSH_AUTH_SOCK",
+            "GIT_SSH_COMMAND",
         )
         for key in passthrough:
             if key in os.environ:

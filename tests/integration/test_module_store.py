@@ -78,7 +78,7 @@ def test_missing_config_uses_the_scoped_or_bare_env(tmp_path: Path, monkeypatch)
     module = store.get("ha")
     assert module is not None
     assert module.missing_config({}) == ["HA_TOKEN"]
-    assert module.missing_config({"HA_TOKEN": "t"}) == []             # bare form
+    assert module.missing_config({"HA_TOKEN": "t"}) == []  # bare form
     assert module.missing_config({"VAHUB_MOD_HA_HA_TOKEN": "t"}) == []  # scoped form
 
 

@@ -156,9 +156,7 @@ class ModuleAPI:
 
         return await self._dispatch(mod, tool, args, timeout_s, principal, decision_name)
 
-    async def _confirm(
-        self, pending_id: str, subject: str | None, timeout_s: float
-    ) -> dict[str, Any]:
+    async def _confirm(self, pending_id: str, subject: str | None, timeout_s: float) -> dict[str, Any]:
         if self._store is None:
             return {"ok": False, "error": "no_store"}
         pending = await self._store.get_pending(pending_id)
@@ -194,9 +192,7 @@ class ModuleAPI:
         # The gate is not re-run here. These exact arguments already passed it;
         # re-evaluating them under the confirming human's principal would deny
         # the very flow the gate asked for.
-        return await self._dispatch(
-            mod, tool, args, timeout_s, subject or "user", "allow-confirmed"
-        )
+        return await self._dispatch(mod, tool, args, timeout_s, subject or "user", "allow-confirmed")
 
     async def _dispatch(
         self,
@@ -215,8 +211,14 @@ class ModuleAPI:
             # pending row is already consumed. Audit the loss rather than
             # returning a bare error that leaves no record of what was approved.
             return await self._failure(
-                principal, module, tool, args, decision, "module_not_ready",
-                time.monotonic(), mod.state.value,
+                principal,
+                module,
+                tool,
+                args,
+                decision,
+                "module_not_ready",
+                time.monotonic(),
+                mod.state.value,
             )
 
         async with mod.lock:  # one in-flight call per module
@@ -234,9 +236,7 @@ class ModuleAPI:
             except asyncio.CancelledError:
                 raise
             except Exception as e:
-                return await self._failure(
-                    principal, module, tool, args, decision, "internal", t0, str(e)
-                )
+                return await self._failure(principal, module, tool, args, decision, "internal", t0, str(e))
             finally:
                 elapsed = time.monotonic() - t0
                 metrics.TOOL_LATENCY.labels(module=module, tool=tool).observe(elapsed)
@@ -248,9 +248,7 @@ class ModuleAPI:
             )
         if raw.get("isError"):
             detail = extract_payload(raw)
-            return await self._failure(
-                principal, module, tool, args, decision, "tool_error", t0, detail
-            )
+            return await self._failure(principal, module, tool, args, decision, "tool_error", t0, detail)
 
         metrics.TOOL_CALLS.labels(module=module, tool=tool, result="ok").inc()
         await self._audit(principal, module, tool, args, decision, "ok", _ms(t0))
@@ -278,9 +276,7 @@ class ModuleAPI:
     ) -> str:
         pending_id = uuid.uuid4().hex
         if self._store is not None:
-            await self._store.create_pending(
-                pending_id, principal, module, tool, args, self._confirm_ttl_s
-            )
+            await self._store.create_pending(pending_id, principal, module, tool, args, self._confirm_ttl_s)
         if self._bus is not None:
             self._bus.publish(
                 "policy.confirmation_required",

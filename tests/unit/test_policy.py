@@ -126,6 +126,7 @@ def test_matches_is_a_full_match_not_a_search(make_gate) -> None:
             },
         }
     )
+
     def allow(v: str) -> str:
         return outcome(gate.evaluate("agent", "home", "get_state", {"entity_id": v}))
 
@@ -236,16 +237,10 @@ def test_destructive_rule_without_agent_confirmation_is_refused_at_load() -> Non
         PolicyConfig.model_validate(base)
     # An agent principal that does not confirm destructive.
     with pytest.raises(ValidationError, match="without confirmation"):
-        PolicyConfig.model_validate(
-            {**base, "principals": {"agent": {"confirm": ["write"], "deny": []}}}
-        )
+        PolicyConfig.model_validate({**base, "principals": {"agent": {"confirm": ["write"], "deny": []}}})
     # Confirming, or denying the tool for the agent, both load.
-    PolicyConfig.model_validate(
-        {**base, "principals": {"agent": {"confirm": ["destructive"], "deny": []}}}
-    )
-    PolicyConfig.model_validate(
-        {**base, "principals": {"agent": {"confirm": [], "deny": ["*unlock*"]}}}
-    )
+    PolicyConfig.model_validate({**base, "principals": {"agent": {"confirm": ["destructive"], "deny": []}}})
+    PolicyConfig.model_validate({**base, "principals": {"agent": {"confirm": [], "deny": ["*unlock*"]}}})
 
 
 def test_a_bad_argument_is_denied_before_confirmation_is_offered(gate: Gate) -> None:

@@ -97,29 +97,21 @@ async def test_metrics_are_exposed_in_prometheus_format(client) -> None:
 async def test_benign_reads_do_not_require_an_origin(client) -> None:
     # A GET that changes nothing and leaks nothing stays lenient, so a plain
     # script is not broken by the Origin rule.
-    assert (
-        await client.get("/api/client-config", headers={"origin": HOSTILE_ORIGIN})
-    ).status_code == 200
+    assert (await client.get("/api/client-config", headers={"origin": HOSTILE_ORIGIN})).status_code == 200
 
 
 async def test_pending_is_origin_checked(client) -> None:
     # /api/pending lists pending_ids, each of which confirms a destructive
     # action, so it is not a benign read: a cross-site page must not read it.
-    assert (
-        await client.get("/api/pending", headers={"origin": HOSTILE_ORIGIN})
-    ).status_code == 403
-    assert (
-        await client.get("/api/pending", headers={"origin": ALLOWED_ORIGIN})
-    ).status_code == 200
+    assert (await client.get("/api/pending", headers={"origin": HOSTILE_ORIGIN})).status_code == 403
+    assert (await client.get("/api/pending", headers={"origin": ALLOWED_ORIGIN})).status_code == 200
 
 
 async def test_an_oversized_body_is_refused(client) -> None:
     # A chat message is capped at 8000 characters; a multi-megabyte POST is
     # refused by its declared length before it is buffered into memory.
     big = "x" * (128 * 1024)
-    response = await client.post(
-        "/api/chat", json={"message": big}, headers={"origin": ALLOWED_ORIGIN}
-    )
+    response = await client.post("/api/chat", json={"message": big}, headers={"origin": ALLOWED_ORIGIN})
     assert response.status_code == 413
 
 
@@ -127,16 +119,12 @@ async def test_an_oversized_body_is_refused(client) -> None:
 # origin rules
 # --------------------------------------------------------------------------
 async def test_a_cross_origin_post_is_refused(client) -> None:
-    response = await client.post(
-        "/api/chat", json={"message": "hello"}, headers={"origin": HOSTILE_ORIGIN}
-    )
+    response = await client.post("/api/chat", json={"message": "hello"}, headers={"origin": HOSTILE_ORIGIN})
     assert response.status_code == 403
 
 
 async def test_an_allowed_origin_gets_through(client) -> None:
-    response = await client.post(
-        "/api/chat", json={"message": "hello"}, headers={"origin": ALLOWED_ORIGIN}
-    )
+    response = await client.post("/api/chat", json={"message": "hello"}, headers={"origin": ALLOWED_ORIGIN})
     assert response.status_code == 200
 
 
@@ -146,17 +134,13 @@ async def test_a_request_without_an_origin_is_a_non_browser_client(client) -> No
 
 
 async def test_the_origin_rule_covers_confirmations(client) -> None:
-    response = await client.post(
-        "/api/confirm/" + "a" * 32, headers={"origin": HOSTILE_ORIGIN}
-    )
+    response = await client.post("/api/confirm/" + "a" * 32, headers={"origin": HOSTILE_ORIGIN})
     assert response.status_code == 403
 
 
 @pytest.mark.parametrize("runtime", [{"origin_allowlist": ["*"]}], indirect=True)
 async def test_a_wildcard_allowlist_disables_the_check(client) -> None:
-    response = await client.post(
-        "/api/chat", json={"message": "hello"}, headers={"origin": HOSTILE_ORIGIN}
-    )
+    response = await client.post("/api/chat", json={"message": "hello"}, headers={"origin": HOSTILE_ORIGIN})
     assert response.status_code == 200
 
 
@@ -170,9 +154,10 @@ def test_a_websocket_from_a_hostile_origin_is_closed(app) -> None:
 
 
 def test_a_websocket_from_an_allowed_origin_receives_the_snapshot(app) -> None:
-    with TestClient(app) as test_client, test_client.websocket_connect(
-        "/ws/events", headers={"origin": ALLOWED_ORIGIN}
-    ) as socket:
+    with (
+        TestClient(app) as test_client,
+        test_client.websocket_connect("/ws/events", headers={"origin": ALLOWED_ORIGIN}) as socket,
+    ):
         message = socket.receive_json()
     # The socket exists to deliver approval prompts, not module telemetry.
     assert message["type"] == "ready"
@@ -185,11 +170,11 @@ def test_a_websocket_from_an_allowed_origin_receives_the_snapshot(app) -> None:
 @pytest.mark.parametrize(
     "path",
     [
-        "/api/dev/call",      # executing a tool without the agent
-        "/api/modules",       # module states
+        "/api/dev/call",  # executing a tool without the agent
+        "/api/modules",  # module states
         "/api/modules/fake/logs",  # module stderr
-        "/api/tools",         # the tool catalogue
-        "/api/audit",         # the audit log
+        "/api/tools",  # the tool catalogue
+        "/api/audit",  # the audit log
     ],
 )
 async def test_operator_routes_are_not_exposed(client, path: str) -> None:

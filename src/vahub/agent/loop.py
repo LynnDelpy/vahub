@@ -151,8 +151,12 @@ class AgentLoop:
                 except Exception as e:  # any backend failure ends the turn politely, never crashes it
                     log.warning("agent_llm_error", error=str(e))
                     return await self._finish(
-                        session, steps, pending, tokens,
-                        f"The language model call failed: {e}", "llm_error",
+                        session,
+                        steps,
+                        pending,
+                        tokens,
+                        f"The language model call failed: {e}",
+                        "llm_error",
                     )
 
                 tokens += await self._account(day, result, session.messages)
@@ -218,13 +222,21 @@ class AgentLoop:
 
                 if self._budgets.tokens_per_turn and tokens > self._budgets.tokens_per_turn:
                     return await self._finish(
-                        session, steps, pending, tokens,
-                        "I hit the token budget for this turn.", "tokens",
+                        session,
+                        steps,
+                        pending,
+                        tokens,
+                        "I hit the token budget for this turn.",
+                        "tokens",
                     )
 
             return await self._finish(
-                session, steps, pending, tokens,
-                "I could not finish that within the step limit.", "iteration_limit",
+                session,
+                steps,
+                pending,
+                tokens,
+                "I could not finish that within the step limit.",
+                "iteration_limit",
             )
         finally:
             # The note describes this turn only. Left in place it would pile up,

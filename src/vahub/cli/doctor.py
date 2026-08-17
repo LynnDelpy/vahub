@@ -86,7 +86,8 @@ def run_checks(config: Config, *, config_path: Path, offline: bool = False) -> l
 def _config_checks(config: Config, config_path: Path) -> list[Check]:
     checks = [
         Check(
-            "Configuration", "config file",
+            "Configuration",
+            "config file",
             "ok" if config_path.is_file() else "warn",
             str(config_path) if config_path.is_file() else f"{config_path} does not exist",
             "" if config_path.is_file() else "run `vahub init` to create one",
@@ -98,7 +99,10 @@ def _config_checks(config: Config, config_path: Path) -> list[Check]:
     except (ZoneInfoNotFoundError, ValueError):
         checks.append(
             Check(
-                "Configuration", "timezone", "fail", f"{config.hub.timezone} is not a known zone",
+                "Configuration",
+                "timezone",
+                "fail",
+                f"{config.hub.timezone} is not a known zone",
                 "use an IANA name such as Europe/Berlin; install tzdata if the database is missing",
             )
         )
@@ -108,7 +112,8 @@ def _config_checks(config: Config, config_path: Path) -> list[Check]:
         mode = secrets.stat().st_mode & 0o777
         checks.append(
             Check(
-                "Configuration", "secrets file",
+                "Configuration",
+                "secrets file",
                 "ok" if mode <= 0o600 else "warn",
                 f"{secrets} (mode {mode:o})",
                 "" if mode <= 0o600 else f"chmod 600 {secrets}: it holds credentials",
@@ -127,7 +132,8 @@ def _state_checks(config: Config) -> list[Check]:
         if directory.is_dir():
             checks.append(
                 Check(
-                    "State", label,
+                    "State",
+                    label,
                     "ok" if _writable(directory) else "fail",
                     str(directory),
                     "" if _writable(directory) else f"the hub user cannot write to {directory}",
@@ -138,7 +144,8 @@ def _state_checks(config: Config) -> list[Check]:
         creatable = parent.is_dir() and _writable(parent)
         checks.append(
             Check(
-                "State", label,
+                "State",
+                label,
                 "warn" if creatable else "fail",
                 f"{directory} does not exist yet",
                 "" if creatable else f"create it, or point the config at a writable path ({parent} is not)",
@@ -149,7 +156,8 @@ def _state_checks(config: Config) -> list[Check]:
     if db.exists():
         checks.append(
             Check(
-                "State", "database",
+                "State",
+                "database",
                 "ok" if _writable(db) else "fail",
                 str(db),
                 "" if _writable(db) else f"the hub user cannot write to {db}",
@@ -163,7 +171,10 @@ def _module_checks(config: Config) -> list[Check]:
     if not modules:
         return [
             Check(
-                "Modules", "installed", "warn", "none",
+                "Modules",
+                "installed",
+                "warn",
+                "none",
                 "the agent has nothing to call; try `vahub module search`",
             )
         ]
@@ -192,10 +203,11 @@ def _module_checks(config: Config) -> list[Check]:
         if len(names) > 1:
             checks.append(
                 Check(
-                    "Modules", f"shared secret {key}", "warn",
+                    "Modules",
+                    f"shared secret {key}",
+                    "warn",
                     ", ".join(sorted(names)),
-                    f"a bare {key} reaches all of these; scope it per module with "
-                    f"VAHUB_MOD_<name>_{key}",
+                    f"a bare {key} reaches all of these; scope it per module with VAHUB_MOD_<name>_{key}",
                 )
             )
     return checks
@@ -209,7 +221,10 @@ def _policy_checks(config: Config) -> list[Check]:
     if policy.default == "allow":
         checks.append(
             Check(
-                "Policy", "default", "warn", "allow",
+                "Policy",
+                "default",
+                "warn",
+                "allow",
                 "every tool not otherwise denied is callable; default: deny is the safer shape",
             )
         )
@@ -219,7 +234,10 @@ def _policy_checks(config: Config) -> list[Check]:
     if not policy.rules:
         checks.append(
             Check(
-                "Policy", "rules", "warn", "none",
+                "Policy",
+                "rules",
+                "warn",
+                "none",
                 "with default deny the agent cannot call anything; add rules for the tools you want",
             )
         )
@@ -231,14 +249,15 @@ def _policy_checks(config: Config) -> list[Check]:
     if unknown:
         checks.append(
             Check(
-                "Policy", "unknown tools", "warn", ", ".join(unknown),
+                "Policy",
+                "unknown tools",
+                "warn",
+                ", ".join(unknown),
                 "no installed module declares these; a rule that matches nothing is usually a typo",
             )
         )
 
-    destructive = sorted(
-        key for key, rule in policy.rules.items() if rule.cls == "destructive"
-    )
+    destructive = sorted(key for key, rule in policy.rules.items() if rule.cls == "destructive")
     if destructive:
         # Only the agent principal matters here: it runs untrusted model output,
         # so a destructive tool it can reach without confirming is the fail-open
@@ -248,16 +267,14 @@ def _policy_checks(config: Config) -> list[Check]:
         agent = policy.principals.get("agent")
         reachable: list[str] = []
         if agent is not None and "destructive" not in agent.confirm:
-            reachable = sorted(
-                key for key in destructive if not any(fnmatch(key, pat) for pat in agent.deny)
-            )
+            reachable = sorted(key for key in destructive if not any(fnmatch(key, pat) for pat in agent.deny))
         checks.append(
             Check(
-                "Policy", "destructive tools",
+                "Policy",
+                "destructive tools",
                 "ok" if not reachable else "warn",
                 ", ".join(destructive),
-                "" if not reachable
-                else f"the agent may call {', '.join(reachable)} without confirmation",
+                "" if not reachable else f"the agent may call {', '.join(reachable)} without confirmation",
             )
         )
 
@@ -265,7 +282,10 @@ def _policy_checks(config: Config) -> list[Check]:
     if reserved:
         checks.append(
             Check(
-                "Policy", "reserved tool", "warn", ", ".join(reserved),
+                "Policy",
+                "reserved tool",
+                "warn",
+                ", ".join(reserved),
                 f"{HEALTH_TOOL} is called by the hub itself; a rule for it has no effect",
             )
         )
@@ -277,7 +297,10 @@ def _llm_checks(config: Config, *, offline: bool) -> list[Check]:
     if llm.provider == "mock":
         return [
             Check(
-                "Language model", "provider", "warn", "mock",
+                "Language model",
+                "provider",
+                "warn",
+                "mock",
                 "the mock provider replies from a keyword table; set a real provider before relying on it",
             )
         ]
@@ -286,7 +309,10 @@ def _llm_checks(config: Config, *, offline: bool) -> list[Check]:
     if not llm.api_key:
         checks.append(
             Check(
-                "Language model", "api key", "fail", "not set",
+                "Language model",
+                "api key",
+                "fail",
+                "not set",
                 "set llm.api_key to ${VAHUB_LLM_API_KEY} and put the key in the secrets file",
             )
         )
@@ -335,10 +361,12 @@ def exposure_checks(config: Config) -> list[Check]:
     loopback = web.host in ("127.0.0.1", "::1", "localhost")
     checks = [
         Check(
-            "Exposure", "bind address",
+            "Exposure",
+            "bind address",
             "ok" if loopback else "warn",
             f"{web.host}:{web.port}",
-            "" if loopback
+            ""
+            if loopback
             else "the hub has no authentication of its own; anyone who can reach this port controls it",
         )
     ]
@@ -347,7 +375,8 @@ def exposure_checks(config: Config) -> list[Check]:
     if wildcard:
         checks.append(
             Check(
-                "Exposure", "origin allowlist",
+                "Exposure",
+                "origin allowlist",
                 "warn" if loopback else "fail",
                 "*",
                 "any web page you visit can drive the hub; list the origins you actually use",
@@ -356,7 +385,10 @@ def exposure_checks(config: Config) -> list[Check]:
     elif not web.origin_allowlist:
         checks.append(
             Check(
-                "Exposure", "origin allowlist", "warn", "empty",
+                "Exposure",
+                "origin allowlist",
+                "warn",
+                "empty",
                 "no browser origin is allowed; the web UI will be refused",
             )
         )
@@ -366,7 +398,9 @@ def exposure_checks(config: Config) -> list[Check]:
     if not loopback and wildcard:
         checks.append(
             Check(
-                "Exposure", "combination", "fail",
+                "Exposure",
+                "combination",
+                "fail",
                 f"bound to {web.host} with origin '*'",
                 "put an authenticating reverse proxy in front, or bind to 127.0.0.1",
             )

@@ -80,9 +80,7 @@ class FakeModuleAPI:
         timeout_s: float = 10.0,
         principal: str = "agent",
     ) -> dict:
-        self.calls.append(
-            {"module": module, "tool": tool, "args": args or {}, "principal": principal}
-        )
+        self.calls.append({"module": module, "tool": tool, "args": args or {}, "principal": principal})
         return self._results.pop(0) if self._results else dict(self._default)
 
 
@@ -279,8 +277,14 @@ async def test_the_pending_id_is_hidden_from_the_model(make_loop, session) -> No
     # `pending`) and never into the model's context.
     secret = "SECRET-TOKEN-123"
     api = FakeModuleAPI(
-        results=[{"ok": False, "error": "confirmation_required", "pending_id": secret,
-                  "detail": "a human must confirm"}],
+        results=[
+            {
+                "ok": False,
+                "error": "confirmation_required",
+                "pending_id": secret,
+                "detail": "a human must confirm",
+            }
+        ],
     )
     llm = ScriptedLLM(tool_call(sanitized("clock.now")), LLMResult(text="waiting for approval"))
     result = await make_loop(llm, moduleapi=api).run_turn(session, "unlock the door")

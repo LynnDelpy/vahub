@@ -47,7 +47,6 @@ log = get_logger("supervisor")
 STDERR_RING = 200
 
 
-
 # Cap on the backoff exponent: 2**6 is about a minute, which is long enough for
 # a transient failure to clear and short enough that a recovered module comes
 # back without an operator.
@@ -75,9 +74,7 @@ class Module:
     restarts: int = 0
     ready_since: float | None = None
     missing_config: list[str] = field(default_factory=list)
-    stderr_ring: collections.deque[str] = field(
-        default_factory=lambda: collections.deque(maxlen=STDERR_RING)
-    )
+    stderr_ring: collections.deque[str] = field(default_factory=lambda: collections.deque(maxlen=STDERR_RING))
     # One in-flight call per module: health probes and tool calls share it, so a
     # probe can never interleave with a real call on the same pipe.
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
@@ -178,9 +175,7 @@ class Supervisor:
             if not self._register_failure(mod):
                 return  # retry budget spent, state is already FAILED
             delay = restart.backoff_base_s ** min(mod.restarts, _MAX_BACKOFF_EXP)
-            log.warning(
-                "module_restart_backoff", module=mod.name, attempt=mod.restarts, delay_s=delay
-            )
+            log.warning("module_restart_backoff", module=mod.name, attempt=mod.restarts, delay_s=delay)
             try:
                 await asyncio.sleep(delay)
             except asyncio.CancelledError:

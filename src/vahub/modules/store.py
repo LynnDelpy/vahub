@@ -239,9 +239,7 @@ class ModuleStore:
         if self.modules_dir.is_dir():
             names.update(p.stem for p in self.modules_dir.glob("*.yaml") if NAME_RE.match(p.stem))
         if self.root.is_dir():
-            names.update(
-                p.name for p in self.root.iterdir() if p.is_dir() and NAME_RE.match(p.name)
-            )
+            names.update(p.name for p in self.root.iterdir() if p.is_dir() and NAME_RE.match(p.name))
         return [self._describe(name) for name in sorted(names)]
 
     def _describe(self, name: str) -> InstalledModule:

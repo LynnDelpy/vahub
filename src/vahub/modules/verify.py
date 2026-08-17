@@ -106,8 +106,7 @@ class VerifyReport:
             "ok": self.ok,
             "tools": self.tools,
             "checks": [
-                {"name": c.name, "ok": c.ok, "severity": c.severity, "detail": c.detail}
-                for c in self.checks
+                {"name": c.name, "ok": c.ok, "severity": c.severity, "detail": c.detail} for c in self.checks
             ],
             "stderr": self.stderr,
         }
@@ -374,9 +373,7 @@ def _check_declaration(report: VerifyReport, manifest: Manifest, names: list[str
     )
 
 
-async def _check_health(
-    report: VerifyReport, client: Any, names: list[str], timeout_s: float
-) -> None:
+async def _check_health(report: VerifyReport, client: Any, names: list[str], timeout_s: float) -> None:
     if HEALTH_TOOL not in names:
         report.add("health_tool", False, f"{HEALTH_TOOL} is required and was not offered")
         return

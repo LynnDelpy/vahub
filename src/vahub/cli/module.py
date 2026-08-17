@@ -153,8 +153,11 @@ def list_installed(ctx: typer.Context) -> None:
     for module in modules:
         if module.manifest is None:
             table.add_row(
-                Text(module.name), Text(module.version), "-",
-                Text("unreadable manifest", style="red"), Text(module.source_label),
+                Text(module.name),
+                Text(module.version),
+                "-",
+                Text("unreadable manifest", style="red"),
+                Text(module.source_label),
             )
             continue
         missing = module.missing_config()
@@ -162,7 +165,8 @@ def list_installed(ctx: typer.Context) -> None:
             Text(module.name),
             Text(module.version),
             str(len(module.manifest.tools)),
-            Text("ok", style="green") if not missing
+            Text("ok", style="green")
+            if not missing
             else Text("missing " + ", ".join(missing), style="yellow"),
             Text(module.source_label),
         )
@@ -274,7 +278,8 @@ def _show_installed(config: Config, module: InstalledModule) -> None:
         for tool, spec in sorted(module.manifest.tools.items()):
             allowed = f"{module.name}.{tool}" in config.policy.rules or config.policy.default == "allow"
             table.add_row(
-                Text(tool), Text(spec.cls),
+                Text(tool),
+                Text(spec.cls),
                 Text("rule present", style="green") if allowed else Text("no rule", style="yellow"),
             )
         console.print(table)
@@ -285,7 +290,8 @@ def add(
     ctx: typer.Context,
     name: str = typer.Argument(None, help="Module name in the registry."),
     source: str = typer.Option(
-        None, "--source",
+        None,
+        "--source",
         help="Install from here instead of the registry: git+https://host/repo@tag, pypi:pkg==1.0, ./path",
     ),
     version: str = typer.Option(None, "--version", help="Registry version to install."),
@@ -300,8 +306,12 @@ def add(
     config = cli.load()
     if all_modules:
         _install_all(
-            config, cli.path, force=force, offline=offline,
-            allow_root=allow_root, registry_url=registry_url,
+            config,
+            cli.path,
+            force=force,
+            offline=offline,
+            allow_root=allow_root,
+            registry_url=registry_url,
         )
         return
     if not name and not source:
@@ -334,9 +344,7 @@ def _install_all(
         return
 
     store = ModuleStore.from_config(config)
-    installer = installer_for(
-        config, offline=offline, allow_root=allow_root, registry_url=registry_url
-    )
+    installer = installer_for(config, offline=offline, allow_root=allow_root, registry_url=registry_url)
     installed: list[str] = []
     skipped: list[str] = []
     failed: list[str] = []
@@ -354,14 +362,15 @@ def _install_all(
             # The message may quote a module or a registry, so print it as text.
             err.print(f"[red]failed[/red] {name}: ", Text(str(e)), sep="")
 
+    # highlight=False so rich does not restyle the counts as numbers, which
+    # would split "N installed" with a colour reset and mislead anything (a
+    # test, a script) that greps the summary line.
     console.print(
-        f"\n[green]{len(installed)} installed[/green], {len(skipped)} skipped, "
-        f"{len(failed)} failed."
+        f"\n[green]{len(installed)} installed[/green], {len(skipped)} skipped, {len(failed)} failed.",
+        highlight=False,
     )
     if installed:
-        console.print(
-            f"Add policy rules for the new tools in {config_path}, then `vahub run`."
-        )
+        console.print(f"Add policy rules for the new tools in {config_path}, then `vahub run`.")
     if failed:
         raise typer.Exit(1)
 
@@ -495,15 +504,14 @@ def _report_install(result: InstallResult, config: Config, config_path: Path) ->
     if result.missing_config:
         secrets = secrets_hint(config_path)
         console.print()
-        console.print(
-            f"{result.name} cannot start until these are set: {', '.join(result.missing_config)}"
-        )
+        console.print(f"{result.name} cannot start until these are set: {', '.join(result.missing_config)}")
         console.print(f"Put them in {secrets} (one KEY=value per line, mode 600) and restart the hub.")
 
     # Only the tools the gate would currently refuse are worth mentioning.
     if config.policy.default != "allow":
         uncovered = sorted(
-            f"{result.name}.{tool}" for tool in result.manifest.tools
+            f"{result.name}.{tool}"
+            for tool in result.manifest.tools
             if f"{result.name}.{tool}" not in config.policy.rules
         )
         if uncovered:

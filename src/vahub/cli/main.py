@@ -70,7 +70,11 @@ def _version(value: bool) -> None:
 def main_callback(
     ctx: typer.Context,
     config: Path = typer.Option(
-        None, "--config", "-c", envvar="VAHUB_CONFIG", metavar="PATH",
+        None,
+        "--config",
+        "-c",
+        envvar="VAHUB_CONFIG",
+        metavar="PATH",
         help="Configuration file. Defaults to ./vahub.yaml, then /etc/vahub/vahub.yaml.",
     ),
     version: bool = typer.Option(

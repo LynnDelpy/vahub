@@ -158,9 +158,7 @@ def write_module(tmp_path: Path, body: str) -> list[str]:
 
 async def test_a_program_that_is_not_a_module_fails(report, tmp_path: Path) -> None:
     command = write_module(tmp_path, "import time\ntime.sleep(30)\n")
-    result = await report(
-        manifest_for(command, restart={"startup_timeout_s": 2}), startup_timeout_s=2
-    )
+    result = await report(manifest_for(command, restart={"startup_timeout_s": 2}), startup_timeout_s=2)
     assert not result.ok
     assert "handshake" in names_of(result, ok=False)
 
@@ -210,7 +208,7 @@ async def test_a_report_serialises_for_ci(report) -> None:
 # --------------------------------------------------------------------------
 # module sources used only by this file
 # --------------------------------------------------------------------------
-HEALTHLESS_MODULE = '''
+HEALTHLESS_MODULE = """
 import json, sys
 
 TOOLS = [{"name": "echo", "description": "echo", "inputSchema": {"type": "object", "properties": {}}}]
@@ -235,9 +233,9 @@ while True:
         send({"jsonrpc": "2.0", "id": msg["id"], "result": {"tools": TOOLS}})
     elif msg.get("id") is not None:
         send({"jsonrpc": "2.0", "id": msg["id"], "result": {"content": []}})
-'''
+"""
 
-BAD_HEALTH_MODULE = '''
+BAD_HEALTH_MODULE = """
 import json, sys
 
 TOOLS = [
@@ -267,4 +265,4 @@ while True:
         # A string where the contract asks for {"ok": bool, ...}.
         send({"jsonrpc": "2.0", "id": msg["id"], "result": {
             "content": [{"type": "text", "text": "fine, thanks"}]}})
-'''
+"""

@@ -48,9 +48,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 REGISTRY_SCHEMA_VERSION = 1
 
 # The official index. Overridable so an organisation can run its own.
-DEFAULT_REGISTRY_URL = (
-    "https://raw.githubusercontent.com/LynnDelpy/vahub-modules/main/registry.json"
-)
+DEFAULT_REGISTRY_URL = "https://raw.githubusercontent.com/LynnDelpy/vahub-modules/main/registry.json"
 
 
 class Strict(BaseModel):
@@ -70,8 +68,7 @@ class GitSource(Strict):
     def _pinned(cls, v: str) -> str:
         if v in ("main", "master", "HEAD") or v.startswith("refs/heads/"):
             raise ValueError(
-                f"rev {v!r} is a moving branch; pin a tag or commit sha so an "
-                "install is reproducible"
+                f"rev {v!r} is a moving branch; pin a tag or commit sha so an install is reproducible"
             )
         return v
 
@@ -161,9 +158,9 @@ class Registry(Strict):
 def parse_source_spec(spec: str) -> Source:
     """Parse the argument of `vahub module add --source`.
 
-        git+https://host/repo.git@v1.2.3#subdir=modules/foo
-        pypi:vahub-mod-foo==1.0.0
-        ./local/path
+    git+https://host/repo.git@v1.2.3#subdir=modules/foo
+    pypi:vahub-mod-foo==1.0.0
+    ./local/path
     """
     text = spec.strip()
     if text.startswith("git+"):
@@ -175,9 +172,7 @@ def parse_source_spec(spec: str) -> Source:
                 if part.startswith("subdir="):
                     subdir = part[len("subdir=") :]
         if "@" not in rest.rsplit("/", 1)[-1]:
-            raise ValueError(
-                "a git source must be pinned: git+https://host/repo.git@<tag-or-sha>"
-            )
+            raise ValueError("a git source must be pinned: git+https://host/repo.git@<tag-or-sha>")
         url, rev = rest.rsplit("@", 1)
         return GitSource(url=url, rev=rev, subdir=subdir)
     if text.startswith("pypi:"):

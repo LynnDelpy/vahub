@@ -73,28 +73,58 @@ class ProviderChoice:
 
 PROVIDERS: tuple[ProviderChoice, ...] = (
     ProviderChoice(
-        "anthropic", "Anthropic", "anthropic", "https://api.anthropic.com/v1",
-        "claude-opus-5", True, "an API key from the Anthropic console",
+        "anthropic",
+        "Anthropic",
+        "anthropic",
+        "https://api.anthropic.com/v1",
+        "claude-opus-5",
+        True,
+        "an API key from the Anthropic console",
     ),
     ProviderChoice(
-        "openrouter", "OpenRouter", "openai_compat", "https://openrouter.ai/api/v1",
-        "anthropic/claude-opus-5", True, "one key, many models",
+        "openrouter",
+        "OpenRouter",
+        "openai_compat",
+        "https://openrouter.ai/api/v1",
+        "anthropic/claude-opus-5",
+        True,
+        "one key, many models",
     ),
     ProviderChoice(
-        "openai", "OpenAI", "openai_compat", "https://api.openai.com/v1",
-        "", True, "you will be asked for the model name",
+        "openai",
+        "OpenAI",
+        "openai_compat",
+        "https://api.openai.com/v1",
+        "",
+        True,
+        "you will be asked for the model name",
     ),
     ProviderChoice(
-        "ollama", "Ollama on this machine", "openai_compat", "http://localhost:11434/v1",
-        "", False, "no key, nothing leaves the machine",
+        "ollama",
+        "Ollama on this machine",
+        "openai_compat",
+        "http://localhost:11434/v1",
+        "",
+        False,
+        "no key, nothing leaves the machine",
     ),
     ProviderChoice(
-        "custom", "Another OpenAI compatible endpoint", "openai_compat", "",
-        "", True, "llama.cpp, vLLM, LM Studio, a company gateway",
+        "custom",
+        "Another OpenAI compatible endpoint",
+        "openai_compat",
+        "",
+        "",
+        True,
+        "llama.cpp, vLLM, LM Studio, a company gateway",
     ),
     ProviderChoice(
-        "mock", "None for now (mock)", "mock", "https://openrouter.ai/api/v1",
-        "mock", False, "canned replies, for trying the hub out",
+        "mock",
+        "None for now (mock)",
+        "mock",
+        "https://openrouter.ai/api/v1",
+        "mock",
+        False,
+        "canned replies, for trying the hub out",
     ),
 )
 
@@ -161,9 +191,7 @@ def init(
     api_key_stdin: bool = typer.Option(
         False, "--api-key-stdin", help="Read the model API key from standard input."
     ),
-    modules: list[str] = typer.Option(
-        None, "--module", "-m", help="Install this module (repeatable)."
-    ),
+    modules: list[str] = typer.Option(None, "--module", "-m", help="Install this module (repeatable)."),
     expose: str = typer.Option(None, "--expose", help="loopback (default) or lan."),
     host: str = typer.Option(None, "--host", help="Bind address, implies --expose lan if not loopback."),
     port: int = typer.Option(None, "--port", help="Port to listen on."),
@@ -210,8 +238,9 @@ def init(
     choice = _pick_provider(llm_provider, interactive)
     base_url = llm_base_url or choice.base_url
     if not base_url:
-        base_url = _ask("Base URL of the endpoint", default="http://localhost:8080/v1",
-                        interactive=interactive)
+        base_url = _ask(
+            "Base URL of the endpoint", default="http://localhost:8080/v1", interactive=interactive
+        )
     model = llm_model or choice.model
     if not model:
         model = _ask("Model to request", default="", interactive=interactive)
@@ -227,8 +256,12 @@ def init(
     # The installer needs somewhere to work before there is a file to read, so
     # the answers so far are validated into a config and used directly.
     config = _draft_config(
-        provider=choice.provider, base_url=base_url, model=model, has_key=bool(choice.needs_key),
-        timezone=timezone or _ask_timezone(interactive), layout=layout,
+        provider=choice.provider,
+        base_url=base_url,
+        model=model,
+        has_key=bool(choice.needs_key),
+        timezone=timezone or _ask_timezone(interactive),
+        layout=layout,
     )
     _prepare_directories(layout)
     chosen = _pick_modules(config, list(modules or []), interactive, registry_url, offline=no_network)
@@ -241,8 +274,13 @@ def init(
 
     # 4. write --------------------------------------------------------------
     text = _render_config(
-        timezone=config.hub.timezone, layout=layout, web=web,
-        provider=choice.provider, base_url=base_url, model=model, has_key=bool(choice.needs_key),
+        timezone=config.hub.timezone,
+        layout=layout,
+        web=web,
+        provider=choice.provider,
+        base_url=base_url,
+        model=model,
+        has_key=bool(choice.needs_key),
         policy=_starter_policy(installed),
     )
     _backup(layout.config_path)
@@ -396,8 +434,7 @@ def _pick_exposure(
     else:
         console.print("\n[bold]Who should be able to reach the web interface?[/bold]")
         console.print(
-            "  1. This machine only (127.0.0.1)\n"
-            "  2. The local network (0.0.0.0)",
+            "  1. This machine only (127.0.0.1)\n  2. The local network (0.0.0.0)",
         )
         console.print(
             Text(
@@ -415,11 +452,10 @@ def _pick_exposure(
         origins = [f"http://localhost:{chosen_port}"]
     else:
         suggestion = f"http://{_hostname()}:{chosen_port}"
-        origins = [_ask("Browser origin you will open the UI from", default=suggestion,
-                        interactive=interactive)]
-        console.print(
-            "[yellow]Reminder:[/yellow] put an authenticating reverse proxy in front of this port."
-        )
+        origins = [
+            _ask("Browser origin you will open the UI from", default=suggestion, interactive=interactive)
+        ]
+        console.print("[yellow]Reminder:[/yellow] put an authenticating reverse proxy in front of this port.")
     return {"host": chosen_host, "port": chosen_port, "origin_allowlist": origins}
 
 
@@ -465,8 +501,13 @@ def _prepare_directories(layout: Layout) -> None:
 
 
 def _install_modules(
-    config: Config, names: list[str], secrets: dict[str, str], interactive: bool,
-    *, offline: bool, allow_root: bool,
+    config: Config,
+    names: list[str],
+    secrets: dict[str, str],
+    interactive: bool,
+    *,
+    offline: bool,
+    allow_root: bool,
 ) -> dict[str, Manifest]:
     """Install the chosen modules and collect what each of them needs.
 
@@ -493,9 +534,7 @@ def _install_modules(
     return manifests(config)
 
 
-def _ask_module_config(
-    module: str, keys: list[str], secrets: dict[str, str], interactive: bool
-) -> None:
+def _ask_module_config(module: str, keys: list[str], secrets: dict[str, str], interactive: bool) -> None:
     for key in keys:
         if key.startswith("VAHUB_"):
             # Every VAHUB_* variable is also a config override, so a module key
@@ -567,14 +606,19 @@ class _Dumper(yaml.SafeDumper):
 
 
 def _block(name: str, data: Any) -> str:
-    return yaml.dump(
-        {name: data}, Dumper=_Dumper, sort_keys=False, width=100, default_flow_style=False
-    )
+    return yaml.dump({name: data}, Dumper=_Dumper, sort_keys=False, width=100, default_flow_style=False)
 
 
 def _render_config(
-    *, timezone: str, layout: Layout, web: dict[str, Any], provider: str, base_url: str, model: str,
-    has_key: bool, policy: dict[str, Any],
+    *,
+    timezone: str,
+    layout: Layout,
+    web: dict[str, Any],
+    provider: str,
+    base_url: str,
+    model: str,
+    has_key: bool,
+    policy: dict[str, Any],
 ) -> str:
     generated = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M %Z")
     credentials = (
@@ -587,9 +631,7 @@ def _render_config(
         else ""
     )
     parts = [
-        f"# vahub configuration, generated by `vahub init` on {generated}.\n"
-        + credentials
-        + "#\n"
+        f"# vahub configuration, generated by `vahub init` on {generated}.\n" + credentials + "#\n"
         "# Every setting can also be overridden with a VAHUB_ variable, using __\n"
         "# between levels: VAHUB_WEB__PORT=9000 sets web.port.\n",
         _block(
@@ -605,7 +647,7 @@ def _render_config(
         "# The hub has no authentication of its own. On 127.0.0.1 only this machine\n"
         "# can reach it. On any other address, put an authenticating reverse proxy in\n"
         "# front of it. origin_allowlist is checked on API calls and on WebSocket\n"
-        "# handshakes; \"*\" turns that check off.\n"
+        '# handshakes; "*" turns that check off.\n'
         + _block(
             "web",
             {
@@ -614,8 +656,11 @@ def _render_config(
                 "origin_allowlist": web["origin_allowlist"],
             },
         ),
-        (f"# api_key is a reference, not the key. The value lives in {layout.secrets_path}.\n"
-         if has_key else "")
+        (
+            f"# api_key is a reference, not the key. The value lives in {layout.secrets_path}.\n"
+            if has_key
+            else ""
+        )
         + _block(
             "llm",
             {
@@ -650,8 +695,7 @@ def _render_config(
         "#     class: write\n"
         "#     constraints:\n"
         '#       entity_id: { matches: "light\\\\.[a-z0-9_]+", max_len: 64 }\n'
-        "#       brightness_pct: { range: [1, 100] }\n"
-        + _block("policy", policy),
+        "#       brightness_pct: { range: [1, 100] }\n" + _block("policy", policy),
         "# Deterministic routines. They run through the gate as principal=scheduler,\n"
         "# without the agent and without the model.\n"
         "#\n"
@@ -661,8 +705,7 @@ def _render_config(
         "#     steps:\n"
         "#       - module: homeassistant\n"
         "#         tool: light_turn_on\n"
-        "#         args: { entity_id: light.bedroom }\n"
-        + _block("schedules", []),
+        "#         args: { entity_id: light.bedroom }\n" + _block("schedules", []),
     ]
     return "\n".join(parts)
 

@@ -144,8 +144,7 @@ class Scheduler:
                     "cron": entry.cron,
                     "enabled": entry.enabled,
                     "steps": [
-                        {"module": s.module, "tool": s.tool, "args": dict(s.args)}
-                        for s in entry.steps
+                        {"module": s.module, "tool": s.tool, "args": dict(s.args)} for s in entry.steps
                     ],
                     "next_run": _next_run(job),
                     "running": bool(lock and lock.locked()),
@@ -292,9 +291,7 @@ class Scheduler:
             if not isinstance(result, dict):
                 result = {"ok": False, "error": "bad_result"}
 
-            results.append(
-                {"step": index, "module": step.module, "tool": step.tool, "result": result}
-            )
+            results.append({"step": index, "module": step.module, "tool": step.tool, "result": result})
             if not result.get("ok"):
                 log.warning(
                     "schedule_step_failed",

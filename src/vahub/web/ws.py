@@ -85,9 +85,7 @@ def build_router(rt: Runtime) -> APIRouter:
             return
         # The event stream carries pending confirmations, so it is gated by the
         # same login as the API when auth is on.
-        if rt.config.web.auth.enabled and await auth.username_from_cookies(
-            websocket.cookies, rt
-        ) is None:
+        if rt.config.web.auth.enabled and await auth.username_from_cookies(websocket.cookies, rt) is None:
             await websocket.close(code=1008)
             return
         await websocket.accept()

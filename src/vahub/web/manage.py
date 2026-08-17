@@ -95,13 +95,11 @@ def build_router(rt: Runtime) -> APIRouter:
     async def get_settings(request: Request) -> JSONResponse:
         alls = await rt.store.all_settings()
         prefs = {k: v for k, v in alls.items() if not k.startswith("memory:")}
-        memory = {k[len("memory:"):]: v for k, v in alls.items() if k.startswith("memory:")}
+        memory = {k[len("memory:") :]: v for k, v in alls.items() if k.startswith("memory:")}
         return JSONResponse({"settings": prefs, "memory": memory})
 
     @router.put("/settings/{key}")
-    async def put_setting(
-        body: SettingBody, request: Request, key: str = Path(pattern=_KEY)
-    ) -> JSONResponse:
+    async def put_setting(body: SettingBody, request: Request, key: str = Path(pattern=_KEY)) -> JSONResponse:
         check_origin(request, rt.config)
         # `memory:` is the assistant's own namespace, managed through its gated
         # tools; the preferences editor must not write into it.
@@ -133,9 +131,7 @@ def build_router(rt: Runtime) -> APIRouter:
         return JSONResponse(result, status_code=200 if result.get("ok") else 400)
 
     @router.delete("/schedules/{schedule_id}")
-    async def delete_schedule(
-        request: Request, schedule_id: str = Path(pattern=_NAME)
-    ) -> JSONResponse:
+    async def delete_schedule(request: Request, schedule_id: str = Path(pattern=_NAME)) -> JSONResponse:
         check_origin(request, rt.config)
         result = await rt.scheduler.remove_dynamic(schedule_id)
         return JSONResponse(result, status_code=200 if result.get("ok") else 400)

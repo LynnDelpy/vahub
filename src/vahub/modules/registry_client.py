@@ -196,9 +196,7 @@ class RegistryClient:
                         )
                     chunks.append(chunk)
         except httpx.HTTPStatusError as e:
-            raise RegistryError(
-                f"registry at {self.url} returned HTTP {e.response.status_code}"
-            ) from e
+            raise RegistryError(f"registry at {self.url} returned HTTP {e.response.status_code}") from e
         except httpx.HTTPError as e:
             raise RegistryError(f"cannot reach the registry at {self.url}: {e}") from e
         return b"".join(chunks)

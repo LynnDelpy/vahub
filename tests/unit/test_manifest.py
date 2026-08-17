@@ -47,8 +47,11 @@ def test_full_manifest_round_trips_through_yaml(tmp_path: Path) -> None:
         "name": "homeassistant",
         "version": "0.2.0",
         "description": "Lights, locks and sensors",
-        "runtime": {"command": ["{venv}/bin/python", "-m", "mod"], "user": "vahub-mod-ha",
-            "cwd": "{state}/ha"},
+        "runtime": {
+            "command": ["{venv}/bin/python", "-m", "mod"],
+            "user": "vahub-mod-ha",
+            "cwd": "{state}/ha",
+        },
         "config": {"required": ["HA_URL", "HA_TOKEN"], "optional": ["HA_VERIFY_SSL"]},
         "audit": {"redact": ["HA_TOKEN"]},
         "tools": {"light_turn_on": {"class": "write"}, "lock_unlock": {"class": "destructive"}},

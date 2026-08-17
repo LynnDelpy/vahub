@@ -126,8 +126,12 @@ def build_router(rt: Runtime) -> APIRouter:
             # The browser transcribes locally in this configuration, so audio
             # posted here has nowhere to go. Say which endpoint to use instead.
             return JSONResponse(
-                {"ok": False, "error": "client_side_stt", "provider": heard.provider,
-                 "detail": "speech.stt.provider is 'browser'; send the text to /api/chat"},
+                {
+                    "ok": False,
+                    "error": "client_side_stt",
+                    "provider": heard.provider,
+                    "detail": "speech.stt.provider is 'browser'; send the text to /api/chat",
+                },
                 status_code=409,
             )
         if heard.error:
@@ -139,9 +143,7 @@ def build_router(rt: Runtime) -> APIRouter:
         session = rt.sessions.get_or_create(session_id)
         # A spoken turn runs under the voice wall-clock budget, which is tighter:
         # a person waiting for an answer out loud gives up long before a reader.
-        result = _as_dict(
-            await rt.agent.run_turn(session, transcript, channel="voice"), "agent_error"
-        )
+        result = _as_dict(await rt.agent.run_turn(session, transcript, channel="voice"), "agent_error")
         rt.sessions.trim(session)
         payload: dict[str, Any] = {"transcript": transcript, **result}
 

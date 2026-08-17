@@ -56,7 +56,10 @@ def show(
     data = _redact(json.loads(config.model_dump_json(by_alias=True)))
 
     if output == "json":
-        console.print_json(json.dumps(data))
+        # Machine-readable output: plain, uncoloured JSON. Rich's print_json
+        # would syntax-highlight it, and under FORCE_COLOR (or any terminal)
+        # the ANSI codes make it unparseable to whatever is consuming it.
+        print(json.dumps(data, indent=2))
         return
     if output != "yaml":
         err.print(f"[red]error:[/red] unknown format {output!r}; use yaml or json")

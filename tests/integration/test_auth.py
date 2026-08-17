@@ -50,9 +50,7 @@ async def rt(construct, state_dir: Path, modules_dir: Path, request):
 @pytest.fixture
 async def client(rt):
     transport = httpx.ASGITransport(app=create_app(rt))
-    async with httpx.AsyncClient(
-        transport=transport, base_url="http://localhost:8080"
-    ) as c:
+    async with httpx.AsyncClient(transport=transport, base_url="http://localhost:8080") as c:
         c.headers["origin"] = ALLOWED_ORIGIN
         yield c
 

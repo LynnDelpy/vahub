@@ -31,9 +31,7 @@ def _mock(adapter: Any, responder) -> list[httpx.Request]:
         seen.append(request)
         return responder(request)
 
-    adapter._client = httpx.AsyncClient(
-        transport=httpx.MockTransport(handler), base_url="http://mock"
-    )
+    adapter._client = httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="http://mock")
     return seen
 
 
@@ -46,8 +44,8 @@ def test_parse_arguments_is_defensive() -> None:
     assert _parse_arguments("") == {}
     assert _parse_arguments("   ") == {}
     assert _parse_arguments("not json") == {}
-    assert _parse_arguments("[1, 2]") == {}   # a JSON array is not arguments
-    assert _parse_arguments("42") == {}       # a scalar is not arguments
+    assert _parse_arguments("[1, 2]") == {}  # a JSON array is not arguments
+    assert _parse_arguments("42") == {}  # a scalar is not arguments
     assert _parse_arguments(None) == {}
 
 
@@ -55,15 +53,15 @@ def test_parse_tool_calls_skips_malformed_entries() -> None:
     raw = [
         {"id": "a", "function": {"name": "do", "arguments": '{"x": 1}'}},
         "not a dict",
-        {"function": {"arguments": "{}"}},          # no name
+        {"function": {"arguments": "{}"}},  # no name
         {"function": {"name": "", "arguments": "{}"}},  # empty name
         {"function": {"name": "later", "arguments": "bad"}},  # id falls back
     ]
     calls = _parse_tool_calls(raw)
     assert [c.name for c in calls] == ["do", "later"]
     assert calls[0].arguments == {"x": 1}
-    assert calls[1].arguments == {}         # unparseable args -> empty
-    assert calls[1].id == "call_4"          # id derived from index
+    assert calls[1].arguments == {}  # unparseable args -> empty
+    assert calls[1].id == "call_4"  # id derived from index
 
 
 def test_parse_tool_calls_of_a_non_list() -> None:
@@ -80,10 +78,16 @@ def _openai() -> OpenAICompatLLM:
 
 async def test_openai_text_reply() -> None:
     adapter = _openai()
-    _mock(adapter, lambda r: httpx.Response(200, json={
-        "choices": [{"message": {"content": "hello"}, "finish_reason": "stop"}],
-        "usage": {"total_tokens": 12},
-    }))
+    _mock(
+        adapter,
+        lambda r: httpx.Response(
+            200,
+            json={
+                "choices": [{"message": {"content": "hello"}, "finish_reason": "stop"}],
+                "usage": {"total_tokens": 12},
+            },
+        ),
+    )
     result = await adapter.complete([{"role": "user", "content": "hi"}], [])
     assert result.text == "hello" and not result.tool_calls
     assert result.stop_reason == "stop"
@@ -92,11 +96,23 @@ async def test_openai_text_reply() -> None:
 
 async def test_openai_tool_call_reply_and_tools_in_payload() -> None:
     adapter = _openai()
-    seen = _mock(adapter, lambda r: httpx.Response(200, json={
-        "choices": [{"message": {"tool_calls": [
-            {"id": "c1", "function": {"name": "time__now", "arguments": '{"tz": "UTC"}'}},
-        ]}}],
-    }))
+    seen = _mock(
+        adapter,
+        lambda r: httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "tool_calls": [
+                                {"id": "c1", "function": {"name": "time__now", "arguments": '{"tz": "UTC"}'}},
+                            ]
+                        }
+                    }
+                ],
+            },
+        ),
+    )
     specs = [ToolSpec(name="time__now", module="time", tool="now", description="d", parameters={})]
     result = await adapter.complete([{"role": "user", "content": "time?"}], specs)
     assert len(result.tool_calls) == 1
@@ -140,25 +156,29 @@ async def test_openai_empty_choices_is_an_empty_result() -> None:
 # anthropic
 # --------------------------------------------------------------------------
 def test_anthropic_message_conversion() -> None:
-    system, msgs = _convert_messages([
-        {"role": "system", "content": "be brief"},
-        {"role": "user", "content": "hi"},
-        {"role": "assistant", "content": "", "tool_calls": [
-            {"id": "c1", "type": "function", "function": {"name": "t", "arguments": '{"a": 1}'}},
-        ]},
-        {"role": "tool", "tool_call_id": "c1", "content": '{"ok": true}'},
-    ])
+    system, msgs = _convert_messages(
+        [
+            {"role": "system", "content": "be brief"},
+            {"role": "user", "content": "hi"},
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {"id": "c1", "type": "function", "function": {"name": "t", "arguments": '{"a": 1}'}},
+                ],
+            },
+            {"role": "tool", "tool_call_id": "c1", "content": '{"ok": true}'},
+        ]
+    )
     assert "be brief" in system
     # assistant with empty text but a tool_use block is kept (empty content is a
     # 400 from the API, so the block must carry it).
     assert any(
-        isinstance(m.get("content"), list)
-        and any(b.get("type") == "tool_use" for b in m["content"])
+        isinstance(m.get("content"), list) and any(b.get("type") == "tool_use" for b in m["content"])
         for m in msgs
     )
     assert any(
-        isinstance(m.get("content"), list)
-        and any(b.get("type") == "tool_result" for b in m["content"])
+        isinstance(m.get("content"), list) and any(b.get("type") == "tool_result" for b in m["content"])
         for m in msgs
     )
 
@@ -169,14 +189,20 @@ def _anthropic() -> AnthropicLLM:
 
 async def test_anthropic_parses_text_and_tool_use() -> None:
     adapter = _anthropic()
-    _mock(adapter, lambda r: httpx.Response(200, json={
-        "content": [
-            {"type": "text", "text": "sure"},
-            {"type": "tool_use", "id": "u1", "name": "time__now", "input": {"tz": "UTC"}},
-        ],
-        "usage": {"input_tokens": 5, "output_tokens": 3},
-        "stop_reason": "tool_use",
-    }))
+    _mock(
+        adapter,
+        lambda r: httpx.Response(
+            200,
+            json={
+                "content": [
+                    {"type": "text", "text": "sure"},
+                    {"type": "tool_use", "id": "u1", "name": "time__now", "input": {"tz": "UTC"}},
+                ],
+                "usage": {"input_tokens": 5, "output_tokens": 3},
+                "stop_reason": "tool_use",
+            },
+        ),
+    )
     result = await adapter.complete([{"role": "user", "content": "time?"}], [])
     assert result.text == "sure"
     assert result.tool_calls[0].name == "time__now" and result.tool_calls[0].arguments == {"tz": "UTC"}

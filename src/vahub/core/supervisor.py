@@ -103,6 +103,12 @@ class Supervisor:
         self._tasks: dict[str, asyncio.Task[None]] = {}
         self._side_tasks: set[asyncio.Task[None]] = set()
         self._stopping = False
+        # Serialises the runtime lifecycle operations (load/apply_config/stop/
+        # remove). The web layer can issue them concurrently for one module (a
+        # config change is not under the install lock), and without this a remove
+        # racing a config change could leave a supervise task untracked, leaking a
+        # child process the shutdown path never kills.
+        self._lifecycle = asyncio.Lock()
         # A snapshot of module configuration set through the web UI (and stored in
         # the database), consulted when the host environment does not already
         # provide a declared key. Kept here so _child_env and discover stay
@@ -204,21 +210,44 @@ class Supervisor:
         task = self._tasks.get(name)
         return task is not None and not task.done()
 
+    # The four runtime lifecycle operations the web layer drives. Each takes the
+    # lifecycle lock and delegates to an unlocked `_`-internal, so they never
+    # interleave (the internals call each other directly, already holding it).
     async def load_module(self, name: str) -> bool:
-        """Bring a newly installed module into a running hub without a restart.
+        async with self._lifecycle:
+            return await self._load_module(name)
 
-        Reads its manifest, adds it, and starts it if it is fully configured; a
-        module that still needs a token is added in the unconfigured state and
-        will start the moment apply_config() sees the token arrive."""
-        if self._running(name):
-            # Already live: treat this as a reload of its configuration.
-            return await self.apply_config(name)
+    async def apply_config(self, name: str) -> bool:
+        async with self._lifecycle:
+            return await self._apply_config(name)
+
+    async def stop_module(self, name: str) -> bool:
+        async with self._lifecycle:
+            return await self._stop_module(name)
+
+    async def remove_module(self, name: str) -> bool:
+        async with self._lifecycle:
+            return await self._remove_module(name)
+
+    async def _load_module(self, name: str) -> bool:
+        """Bring a newly installed (or reinstalled) module into a running hub
+        without a hub restart.
+
+        The manifest is always read fresh from disk, so a reinstall picks up a
+        changed command, tool set or config; if the module was already running it
+        is stopped first and replaced by the fresh instance. A module that still
+        needs a token is added in the unconfigured state and will start the moment
+        apply_config() sees the token arrive."""
         path = self._manifest_path(name)
         if not path.is_file():
             return False
         mod = self._build_module(path)
         if mod is None:
             return False
+        # Stop the previous instance (if any) before swapping in the fresh one, so
+        # a reinstall does not leave the old process running against the old code.
+        if self._running(name):
+            await self._stop_module(name)
         self.modules[mod.name] = mod
         if mod.missing_config or self._stopping:
             self._set_state(mod, State.UNCONFIGURED if mod.missing_config else State.STOPPED)
@@ -227,17 +256,17 @@ class Supervisor:
         self._tasks[mod.name] = asyncio.create_task(self._supervise(mod), name=f"supervise:{mod.name}")
         return True
 
-    async def apply_config(self, name: str) -> bool:
+    async def _apply_config(self, name: str) -> bool:
         """React to a change in a module's stored configuration: start it if it
         is now ready, restart it if it is running so it picks up the new values,
         or stop it if it lost a required key."""
         mod = self.modules.get(name)
         if mod is None:
-            return await self.load_module(name)
+            return await self._load_module(name)
         self._refresh_config(mod)
         if mod.missing_config:
             if self._running(name):
-                await self.stop_module(name)
+                await self._stop_module(name)
             self._set_state(mod, State.UNCONFIGURED)
             return True
         if self._running(name):
@@ -250,7 +279,7 @@ class Supervisor:
         self._tasks[name] = asyncio.create_task(self._supervise(mod), name=f"supervise:{name}")
         return True
 
-    async def stop_module(self, name: str) -> bool:
+    async def _stop_module(self, name: str) -> bool:
         """Stop one module: cancel its supervise loop, kill the process, close the
         client. The module row stays so the UI still lists it as stopped; use
         remove_module to drop it entirely."""
@@ -271,14 +300,21 @@ class Supervisor:
             self._set_state(mod, State.STOPPED)
         return True
 
-    async def remove_module(self, name: str) -> bool:
+    async def _remove_module(self, name: str) -> bool:
         """Stop a module and forget it entirely. The caller deletes the manifest
         and the venv on disk; this only detaches it from the running hub."""
         if name not in self.modules:
             return False
-        await self.stop_module(name)
+        await self._stop_module(name)
         self.modules.pop(name, None)
-        self._tasks.pop(name, None)
+        # Cancel any task still tracked before dropping the reference, so a
+        # supervise loop can never outlive the module as an untracked orphan
+        # (which stop() at shutdown would then never reach).
+        task = self._tasks.pop(name, None)
+        if task is not None and not task.done():
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await task
         self._db_config.pop(name, None)
         return True
 

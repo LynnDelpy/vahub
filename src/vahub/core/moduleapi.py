@@ -105,9 +105,11 @@ class ModuleAPI:
         authenticated owner does from the web UI (the same principle by which the
         owner may edit locations and settings directly). This path is therefore
         not gated, so a dashboard card can show unread mail without a policy rule.
-        It is restricted to read-class tools, however, so it can never be a write
-        or a destructive action, and every call is still audited as the acting
-        user."""
+        It runs only tools the module *declares* read (and that the policy has not
+        classified as something stronger), and every call is audited as the acting
+        user. That declaration is the module's own advisory claim; see
+        _is_read_tool for why trusting it on this owner-only path is consistent
+        with the trust model, and for what it does and does not guarantee."""
         try:
             return await self._call_read(module, tool, args, subject, timeout_s)
         except asyncio.CancelledError:
@@ -146,12 +148,24 @@ class ModuleAPI:
         return await self._dispatch(mod, tool, args, timeout_s, subject or "user", "allow")
 
     def _is_read_tool(self, mod: Module, tool: str) -> bool:
-        """A tool is read-only for the owner path only if BOTH the module's
-        manifest declares it read AND the policy has not classified it as
-        anything stronger. The manifest is the module's own claim (advisory), so
-        an operator rule that marks a tool destructive is honoured even though the
-        gate is bypassed, and a module cannot get a write tool called by
-        describing it as a read."""
+        """Whether the owner read-path may run this tool.
+
+        Two conditions: the module must DECLARE the tool read in its manifest,
+        and the policy must not classify it as anything stronger (an explicit
+        write/destructive rule is honoured even though this path otherwise
+        bypasses the gate). The manifest class is the module's own, advisory
+        claim. This path trusts it, which is consistent with the trust model: a
+        module you installed is code you chose to run in its own process with its
+        own credentials, so it can already reach whatever that allows.
+
+        What this does NOT guarantee: a module that mislabels a write tool as
+        read, with no policy rule naming it, could have that tool invoked here by
+        the signed-in owner (or by a dashboard card that fires it). What it DOES
+        guarantee is the boundary that does not rest on trusting the module: the
+        untrusted model and the scheduler still cannot reach any tool without a
+        policy rule, because they go through the gate and never this path. To
+        remove even the owner-path trust for a specific tool, give it a
+        write/destructive rule in the policy."""
         spec = mod.manifest.tools.get(tool)
         manifest_read = spec is not None and spec.cls == "read"
         policy_read = self._gate is None or self._gate.cls_for(mod.name, tool) == "read"

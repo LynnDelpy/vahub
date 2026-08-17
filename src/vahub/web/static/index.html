@@ -380,7 +380,7 @@
     const r = await api("POST", "/api/chat", { message: message, session_id: sessionId });
     pending.remove();
     if (!r.ok) {
-      if (r.status === 401) { dropToLogin(); return; }
+      if (r.status === 401) { sendBtn.disabled = false; dropToLogin(); return; }
       bubble(r.data.detail || ("Something went wrong (" + r.status + ")."), "problem");
     } else {
       sessionId = r.data.session_id || sessionId;
@@ -1032,19 +1032,19 @@
       const r = await api("POST", "/api/setup", { username: user.value, password: pass.value });
       btn.disabled = false;
       if (r.ok && r.data.ok) { boot(); return; }
-      if (r.status === 409) { err.textContent = "An account already exists. Sign in instead."; renderLogin(); return; }
+      if (r.status === 409) { renderLogin("An account already exists. Sign in instead."); return; }
       err.textContent = (r.data && r.data.detail) || "Could not create the account.";
     });
     gateBody.appendChild(form);
     user.focus();
   }
 
-  function renderLogin() {
+  function renderLogin(message) {
     $("gateTitle").textContent = "Sign in";
     gateBody.textContent = "";
     const user = el("input", { type: "text", placeholder: "username", autocomplete: "username" });
     const pass = el("input", { type: "password", placeholder: "password", autocomplete: "current-password" });
-    const err = el("div", { class: "err" });
+    const err = el("div", { class: "err", text: message || "" });
     const btn = el("button", { class: "btn primary", type: "submit", text: "Sign in" });
     const form = el("form", null, [
       el("label", { class: "field" }, ["username", user]),

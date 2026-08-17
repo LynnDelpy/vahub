@@ -114,7 +114,11 @@ def build_router(rt: Runtime) -> APIRouter:
                 await asyncio.gather(*tasks, return_exceptions=True)
             for sub, _ in subs:
                 rt.bus.unsubscribe(sub)
-            with contextlib.suppress(RuntimeError):
+            # A client that vanished makes the close itself raise: RuntimeError
+            # if Starlette already tore the socket down, WebSocketDisconnect if
+            # the peer is gone (code 1006). Neither is worth a logged traceback on
+            # every dropped tab; the connection is over either way.
+            with contextlib.suppress(RuntimeError, WebSocketDisconnect):
                 await websocket.close()
 
     return router

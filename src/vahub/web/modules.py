@@ -7,10 +7,12 @@ origin-checked on every write, like the rest of the management surface.
 
 Two boundaries hold here, deliberately.
 
-Installing a module never grants it permission. Its tools stay denied until a
-policy rule is written in vahub.yaml, which is a file-and-CLI action; the UI
-cannot add one. So a module installed here can do nothing to the world until a
-human edits the policy, and the assistant can never install itself a capability.
+Installing a module grants the assistant nothing. Its tools stay denied to the
+model and the scheduler until a policy rule is written in vahub.yaml, which is a
+file-and-CLI action the UI cannot perform. So the assistant can never install
+itself a capability. (A dashboard card can read a module's own read-declared
+tools through the owner endpoint without a rule; see moduleapi.call_read for what
+that trusts and what it does not.)
 
 The configuration values set here (often API tokens) are stored in the database,
 scoped to one module, and never read back to the browser: the UI learns which
@@ -84,8 +86,11 @@ def build_router(rt: Runtime) -> APIRouter:
     @router.get("/modules")
     async def list_modules(request: Request) -> JSONResponse:
         store = ModuleStore.from_config(rt.config)
+        # Reading and parsing every manifest touches the disk, so it runs off the
+        # event loop rather than stalling other requests.
+        installed = await asyncio.to_thread(store.list_installed)
         out = []
-        for m in store.list_installed():
+        for m in installed:
             manifest = m.manifest
             live = rt.supervisor.modules.get(m.name)
             tools = (

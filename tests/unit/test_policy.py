@@ -84,6 +84,39 @@ def test_the_decision_carries_the_class_for_the_audit_log(gate: Gate) -> None:
     assert decision.cls == "write"
 
 
+def test_a_rule_cannot_downgrade_a_manifest_declared_class(make_gate) -> None:
+    # A rule that omits `class:` defaults to read. If the operator writes such a
+    # rule for a tool the module declares destructive, the gate must still make
+    # the agent confirm it, using the module's own declared class. Otherwise a
+    # forgotten `class:` silently opens a destructive tool to unattended calls.
+    gate = make_gate(
+        {
+            "default": "deny",
+            "principals": {"agent": {"confirm": ["destructive"], "deny": []}},
+            "rules": {"door.unlock": {"constraints": {"id": {"max_len": 10}}}},
+        }
+    )
+    # Without the declared class the rule reads as `read`, so it would allow.
+    assert outcome(gate.evaluate("agent", "door", "unlock", {"id": "front"})) == "allow"
+    # Told the manifest declares it destructive, the gate elevates to confirm.
+    elevated = gate.evaluate("agent", "door", "unlock", {"id": "front"}, declared_cls="destructive")
+    assert outcome(elevated) == "confirm" and elevated.cls == "destructive"
+
+
+def test_a_rule_class_stronger_than_the_manifest_is_kept(make_gate) -> None:
+    # The reconciliation takes the stronger of the two, so an operator can still
+    # tighten a tool the module only declares write up to destructive.
+    gate = make_gate(
+        {
+            "default": "deny",
+            "principals": {"agent": {"confirm": ["destructive"], "deny": []}},
+            "rules": {"door.unlock": {"class": "destructive", "constraints": {"id": {"max_len": 10}}}},
+        }
+    )
+    d = gate.evaluate("agent", "door", "unlock", {"id": "front"}, declared_cls="write")
+    assert outcome(d) == "confirm" and d.cls == "destructive"
+
+
 # --------------------------------------------------------------------------
 # argument constraints
 # --------------------------------------------------------------------------

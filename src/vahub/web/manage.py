@@ -119,6 +119,11 @@ def build_router(rt: Runtime) -> APIRouter:
     @router.delete("/settings/{key}")
     async def delete_setting(request: Request, key: str = Path(pattern=_KEY)) -> JSONResponse:
         check_origin(request, rt.config)
+        # Deleting is a modification of the namespace too, so the same guard the
+        # PUT has: the preferences editor must not touch the assistant's `memory:`
+        # namespace, which is managed only through its gated tools.
+        if key.startswith("memory:"):
+            return JSONResponse({"ok": False, "error": "reserved_key"}, status_code=400)
         return JSONResponse({"ok": await rt.store.delete_setting(key)})
 
     # --- reading module data (for dashboard cards) ------------------------

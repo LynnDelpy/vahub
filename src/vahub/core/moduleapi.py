@@ -214,7 +214,13 @@ class ModuleAPI:
 
         decision_name = "allow"
         if self._gate is not None:
-            decision = self._gate.evaluate(principal, module, tool, args)
+            # Pass the module's own manifest-declared class so the gate cannot let
+            # a policy rule that omits `class:` downgrade a destructive tool to a
+            # read and skip its confirmation.
+            spec = mod.manifest.tools.get(tool)
+            decision = self._gate.evaluate(
+                principal, module, tool, args, declared_cls=spec.cls if spec is not None else None
+            )
             outcome = getattr(decision, "outcome", "deny")
             reason = getattr(decision, "reason", "")
             metrics.POLICY_DECISIONS.labels(

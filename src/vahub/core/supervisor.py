@@ -635,21 +635,30 @@ class Supervisor:
     async def _kill(self, proc: asyncio.subprocess.Process) -> None:
         if proc.returncode is not None:
             return
-        with contextlib.suppress(ProcessLookupError):
-            proc.terminate()
+        # Signal the whole process group, not just the leader, on the graceful
+        # path too: the module is spawned with start_new_session=True, so a helper
+        # it forked lives in its group. terminate()/kill() would reach only the
+        # leader, orphaning the helper if the leader honours SIGTERM and exits.
+        self._signal_group(proc, signal.SIGTERM)
         try:
             await asyncio.wait_for(proc.wait(), timeout=5)
             return
         except TimeoutError:
             pass
-        # The module ignored SIGTERM. It has its own process group, so kill the
-        # group: a module that forked helpers should not leave them behind.
+        # It ignored SIGTERM. Take the group down hard so nothing is left behind.
+        self._signal_group(proc, signal.SIGKILL)
+        await proc.wait()
+
+    @staticmethod
+    def _signal_group(proc: asyncio.subprocess.Process, sig: int) -> None:
+        """Send `sig` to the child's whole process group, falling back to the lone
+        process if the group is already gone. While the leader is alive its pgid
+        equals its pid (start_new_session), so this reaches its forked helpers."""
         try:
-            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+            os.killpg(os.getpgid(proc.pid), sig)
         except (ProcessLookupError, PermissionError, OSError):
             with contextlib.suppress(ProcessLookupError):
-                proc.kill()
-        await proc.wait()
+                proc.send_signal(sig)
 
     async def stop(self) -> None:
         self._stopping = True

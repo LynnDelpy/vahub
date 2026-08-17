@@ -178,3 +178,22 @@ async def test_module_management_and_tool_calls_require_login(client) -> None:
     # guarded by the same login as the rest of the API.
     assert (await client.get("/api/modules")).status_code == 401
     assert (await client.post("/api/tools/fake/echo", json={"args": {}})).status_code == 401
+
+
+def test_throttle_prunes_empty_buckets_and_stays_bounded() -> None:
+    # The login path calls locked() before record_failure() for the same key, so
+    # locked() must not persist an empty bucket, or the max_keys eviction becomes
+    # dead code and the map grows one entry per attempted username forever.
+    import time
+
+    from vahub.web.auth import _Throttle
+
+    t = _Throttle(limit=5, window_s=300.0, max_keys=8)
+    now = time.time()
+    for i in range(50):
+        assert t.locked(f"ghost{i}", now) is False  # never-failing usernames
+    assert len(t._fails) == 0  # no empty buckets accumulated
+
+    for i in range(100):
+        t.record_failure(f"user{i}", now)  # a flood of distinct failing usernames
+    assert len(t._fails) <= 8  # bounded by max_keys, not unbounded

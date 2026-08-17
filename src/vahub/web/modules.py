@@ -226,18 +226,23 @@ def build_router(rt: Runtime) -> APIRouter:
         key: str = Path(pattern=_KEY),
     ) -> JSONResponse:
         check_origin(request, rt.config)
-        manifest = _manifest(rt, name)
-        if manifest is None:
-            return JSONResponse({"ok": False, "error": "unknown_module"}, status_code=404)
-        declared = set(manifest.config.required) | set(manifest.config.optional)
-        if key not in declared:
-            # Only keys the module says it reads may be set, so the form cannot be
-            # used to inject arbitrary environment into a module.
-            return JSONResponse({"ok": False, "error": "undeclared_key", "detail": key}, status_code=400)
-        await rt.store.set_module_config(name, key, body.value)
-        rt.supervisor.update_module_config(name, await rt.store.module_config(name))
-        await rt.supervisor.apply_config(name)
-        state, missing = _live_state(name)
+        # Hold the install lock so a config change cannot interleave with an
+        # install or remove of the same module. Without it, a config edit racing
+        # a remove could re-read the manifest mid-deletion and resurrect the
+        # module as a ghost pointing at a deleted venv.
+        async with install_lock:
+            manifest = _manifest(rt, name)
+            if manifest is None:
+                return JSONResponse({"ok": False, "error": "unknown_module"}, status_code=404)
+            declared = set(manifest.config.required) | set(manifest.config.optional)
+            if key not in declared:
+                # Only keys the module says it reads may be set, so the form cannot
+                # be used to inject arbitrary environment into a module.
+                return JSONResponse({"ok": False, "error": "undeclared_key", "detail": key}, status_code=400)
+            await rt.store.set_module_config(name, key, body.value)
+            rt.supervisor.update_module_config(name, await rt.store.module_config(name))
+            await rt.supervisor.apply_config(name)
+            state, missing = _live_state(name)
         return JSONResponse({"ok": True, "name": name, "state": state, "missing_config": missing})
 
     @router.delete("/modules/{name}/config/{key}")
@@ -247,10 +252,15 @@ def build_router(rt: Runtime) -> APIRouter:
         key: str = Path(pattern=_KEY),
     ) -> JSONResponse:
         check_origin(request, rt.config)
-        removed = await rt.store.delete_module_config(name, key)
-        rt.supervisor.update_module_config(name, await rt.store.module_config(name))
-        await rt.supervisor.apply_config(name)
-        state, missing = _live_state(name)
+        async with install_lock:  # mutually exclusive with install/remove, as above
+            # A removed module has no manifest on disk; refuse to touch config for
+            # one, so a delete racing a remove cannot resurrect it.
+            if _manifest(rt, name) is None:
+                return JSONResponse({"ok": False, "error": "unknown_module"}, status_code=404)
+            removed = await rt.store.delete_module_config(name, key)
+            rt.supervisor.update_module_config(name, await rt.store.module_config(name))
+            await rt.supervisor.apply_config(name)
+            state, missing = _live_state(name)
         return JSONResponse(
             {"ok": removed, "name": name, "key": key, "state": state, "missing_config": missing}
         )

@@ -127,3 +127,15 @@ async def test_module_config_never_leaks_through_app_settings(store) -> None:
     await store.set_module_config("github", "TOKEN", "a-fake-token")
     await store.set_setting("units", "metric")
     assert await store.all_settings() == {"units": "metric"}
+
+
+async def test_vacuum_into_writes_a_private_backup(store, tmp_path) -> None:
+    import os
+    import stat
+
+    dest = tmp_path / "backups" / "copy.db"
+    await store.vacuum_into(dest)
+    # The backup is a full copy of a secret-bearing DB, so it and its directory
+    # must be private, not left at the umask default.
+    assert stat.S_IMODE(os.stat(dest).st_mode) & 0o077 == 0
+    assert stat.S_IMODE(os.stat(dest.parent).st_mode) & 0o077 == 0

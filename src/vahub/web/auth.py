@@ -65,7 +65,14 @@ class _Throttle:
 
     def locked(self, key: str, now: float) -> bool:
         recent = [t for t in self._fails.get(key, ()) if now - t < self._window_s]
-        self._fails[key] = recent
+        # Do not keep an empty bucket: a login always calls this before
+        # record_failure, so persisting `key` here (even with no recent failures)
+        # would make record_failure's `key not in self._fails` eviction guard dead
+        # code and let the map grow one permanent entry per attempted username.
+        if recent:
+            self._fails[key] = recent
+        else:
+            self._fails.pop(key, None)
         return len(recent) >= self._limit
 
     def record_failure(self, key: str, now: float) -> None:

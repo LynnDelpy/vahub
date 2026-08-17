@@ -243,6 +243,14 @@
     return { ok: r.ok, status: r.status, data: data };
   }
 
+  // A guarded GET returning 401 means the session expired mid-use. Send the user
+  // to the login screen instead of rendering a misleading empty panel/widget.
+  // Returns true when it handled a 401, so callers can stop rendering.
+  function reauthed(r) {
+    if (r && r.status === 401) { dropToLogin(); return true; }
+    return false;
+  }
+
   const $ = function (id) { return document.getElementById(id); };
   const thread = $("thread"), empty = $("empty"), input = $("input");
   const sendBtn = $("send"), micBtn = $("mic"), readBox = $("readAloud");
@@ -345,8 +353,13 @@
   let wsBackoff = 1000;
   let signedOut = false;
   let socket = null;
+  let reconnectTimer = null;
   function connect() {
     if (signedOut) return;
+    // Cancel any pending reconnect: without this, a timer scheduled while we were
+    // down can fire after a fresh socket exists and tear it down, and its onclose
+    // schedules the next one, churning forever after a logout+relogin.
+    if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
     if (socket) { try { socket.close(); } catch (e) { /* already gone */ } socket = null; }
     let ws;
     try {
@@ -356,11 +369,12 @@
     socket = ws;
     ws.onopen = function () { setState(""); wsBackoff = 1000; loadPending(); };
     ws.onclose = function () {
-      // Stop reconnecting once the user has signed out; otherwise the server
-      // keeps closing an unauthenticated handshake and the client retries forever.
-      if (signedOut) return;
+      // Only the current socket may drive a reconnect. A superseded socket (one
+      // connect() force-closed) firing its onclose must not schedule anything, or
+      // the teardown/rebuild becomes self-perpetuating. Also stop once signed out.
+      if (ws !== socket || signedOut) return;
       setState("reconnecting");
-      setTimeout(connect, wsBackoff);
+      reconnectTimer = setTimeout(connect, wsBackoff);
       wsBackoff = Math.min(wsBackoff * 2, 30000);   // back off instead of hammering
     };
     ws.onmessage = function (ev) {
@@ -434,11 +448,14 @@
           const resp = await fetch("/api/voice", { method: "POST", body: form });
           const data = await resp.json().catch(function () { return {}; });
           thinking.remove();
-          if (data.ok === false) { bubble(data.detail || data.error, "problem"); return; }
+          if (resp.status === 401) { dropToLogin(); return; }   // session expired mid-use
+          if (data.ok === false) { bubble(data.detail || data.error || "That did not work.", "problem"); return; }
           if (data.transcript) bubble(data.transcript, "mine");
           sessionId = data.session_id || sessionId;
           if (data.reply) bubble(data.reply, "theirs");
-          if (data.audio) new Audio("data:" + (data.audio_mime || "audio/mpeg") + ";base64," + data.audio).play();
+          // The "read replies aloud" toggle governs both TTS paths: play the
+          // server's synthesized audio only when it is checked, as speak() does.
+          if (data.audio && readBox.checked) new Audio("data:" + (data.audio_mime || "audio/mpeg") + ";base64," + data.audio).play();
           else speak(data.reply || "");
           loadPending();
         } catch (e) { thinking.remove(); bubble("Could not send the recording.", "problem"); }
@@ -475,6 +492,7 @@
 
     const list = el("ul", { class: "items" });
     const r = await api("GET", "/api/locations");
+    if (reauthed(r)) return;
     (r.data.locations || []).forEach(function (loc) {
       const bits = [];
       if (loc.latitude != null && loc.longitude != null) bits.push(loc.latitude + ", " + loc.longitude);
@@ -533,6 +551,7 @@
     panel.appendChild(el("p", { class: "sub", text: "Simple key/value settings, e.g. units = metric, language = en." }));
 
     const r = await api("GET", "/api/settings");
+    if (reauthed(r)) return;
     const prefs = r.data.settings || {};
     const memory = r.data.memory || {};
 
@@ -592,6 +611,7 @@
 
     const list = el("ul", { class: "items" });
     const r = await api("GET", "/api/schedules");
+    if (reauthed(r)) return;
     (r.data.schedules || []).forEach(function (s) {
       const steps = (s.steps || []).map(function (st) { return st.module + "." + st.tool; }).join(", ");
       const meta = el("span", { class: "grow" }, [
@@ -736,6 +756,7 @@
     panel.appendChild(el("p", { class: "sub", text: "Install a module, give it the settings it needs, and remove it. Installing does not grant permission: a tool stays denied until you add a policy rule for it in vahub.yaml on the host." }));
 
     const r = await api("GET", "/api/modules");
+    if (reauthed(r)) return;
     const mods = (r.ok && r.data.modules) || [];
     if (!mods.length) panel.appendChild(el("p", { class: "note", text: "No modules installed yet." }));
     mods.forEach(function (m) { panel.appendChild(moduleCard(m)); });
@@ -939,6 +960,7 @@
   async function renderPlacesWidget(card) {
     const ul = el("ul"); card.appendChild(ul);
     const r = await api("GET", "/api/locations");
+    if (reauthed(r)) return;
     const places = (r.ok && r.data.locations) || [];
     if (!places.length) { ul.appendChild(el("li", { class: "muted", text: "No places saved." })); return; }
     places.forEach(function (p) {
@@ -949,6 +971,7 @@
   async function renderRoutinesWidget(card) {
     const ul = el("ul"); card.appendChild(ul);
     const r = await api("GET", "/api/schedules");
+    if (reauthed(r)) return;
     const rows = ((r.ok && r.data.schedules) || []).filter(function (s) { return s.enabled; });
     if (!rows.length) { ul.appendChild(el("li", { class: "muted", text: "No routines." })); return; }
     rows.slice(0, 6).forEach(function (s) {
@@ -959,6 +982,7 @@
   async function renderNotesWidget(card) {
     const ul = el("ul"); card.appendChild(ul);
     const r = await api("GET", "/api/settings");
+    if (reauthed(r)) return;
     const memory = (r.ok && r.data.memory) || {};
     const keys = Object.keys(memory);
     if (!keys.length) { ul.appendChild(el("li", { class: "muted", text: "Nothing remembered yet." })); return; }
@@ -1002,7 +1026,9 @@
   }
   function dropToLogin() {
     // Session expired or a route returned 401 mid-use: show the login form, not
-    // an empty box, and stop the socket from retrying unauthenticated.
+    // an empty box, and stop the socket from retrying unauthenticated. Idempotent
+    // so several concurrent 401s (e.g. three dashboard widgets) do it once.
+    if (signedOut) return;
     signedOut = true;
     if (socket) { try { socket.close(); } catch (e) { /* gone */ } socket = null; }
     renderLogin();

@@ -30,6 +30,18 @@ from ..config.models import Config, Constraint, PolicyConfig, Principal, Rule, T
 
 Outcome = Literal["allow", "deny", "confirm"]
 
+# Ascending severity, so the gate can take the stronger of a rule's class and a
+# module's manifest-declared class without a rule ever being able to weaken it.
+_CLASS_RANK: dict[ToolClass, int] = {"read": 0, "write": 1, "destructive": 2}
+
+
+def _stronger(a: ToolClass, b: ToolClass | None) -> ToolClass:
+    """The higher-severity of two classes; `a` when the other is unknown."""
+    if b is None:
+        return a
+    return a if _CLASS_RANK[a] >= _CLASS_RANK[b] else b
+
+
 # Used when policy.default is "allow" and no rule names the tool. It carries no
 # constraints, which is why an argument-bearing call is still denied there: an
 # unconstrained argument is the thing this gate exists to prevent.
@@ -85,10 +97,25 @@ class Gate:
             return False
         return key in self._rules or not self._default_deny
 
-    def evaluate(self, principal: str, module: str, tool: str, args: Any = None) -> Decision:
+    def evaluate(
+        self,
+        principal: str,
+        module: str,
+        tool: str,
+        args: Any = None,
+        declared_cls: ToolClass | None = None,
+    ) -> Decision:
         key = f"{module}.{tool}"
         rule = self._rules.get(key)
-        cls: ToolClass = rule.cls if rule is not None else "read"
+        rule_cls: ToolClass = rule.cls if rule is not None else "read"
+        # The module declares its own class in its manifest. A policy rule must not
+        # be able to DOWNGRADE below it: a rule that omits `class:` defaults to
+        # read, and without this a manifest-destructive tool ruled that way would
+        # skip the confirmation it needs. Permission still comes from the rule
+        # alone (the manifest can never grant access); the manifest can only raise
+        # the class, which only ever adds a confirmation. So the effective class is
+        # the stronger of the two.
+        cls: ToolClass = _stronger(rule_cls, declared_cls)
 
         if self._denied_by_principal(principal, key):
             return Decision(

@@ -81,18 +81,20 @@ def create_app(rt: Runtime) -> FastAPI:
     # size check.
     @app.middleware("http")
     async def limit_body_size(request: Request, call_next):
-        # Reject an oversized body by its declared length before it is buffered.
-        # /api/voice carries audio and enforces its own, larger cap in the
-        # handler; every other route is small JSON, so a multi-megabyte POST to
-        # /api/chat is refused here rather than read into memory first.
-        declared = request.headers.get("content-length")
-        if (
-            declared is not None
-            and declared.isdigit()
-            and request.url.path != "/api/voice"
-            and int(declared) > MAX_JSON_BODY
-        ):
-            return JSONResponse({"ok": False, "error": "request_too_large"}, status_code=413)
+        # Reject an oversized body before it is buffered. /api/voice carries audio
+        # and enforces its own, larger streaming cap in the handler; every other
+        # route is small JSON, so a multi-megabyte POST to /api/chat is refused
+        # here rather than read into memory first.
+        if request.url.path != "/api/voice":
+            declared = request.headers.get("content-length")
+            if declared is not None and declared.isdigit() and int(declared) > MAX_JSON_BODY:
+                return JSONResponse({"ok": False, "error": "request_too_large"}, status_code=413)
+            # A chunked body carries no Content-Length, so the check above cannot
+            # bound it. These routes never stream a request body, so a chunked one
+            # is refused outright rather than buffered unbounded. (An empty-body
+            # POST, e.g. logout, sends neither header and passes.)
+            if "transfer-encoding" in request.headers:
+                return JSONResponse({"ok": False, "error": "request_too_large"}, status_code=413)
         return await call_next(request)
 
     @app.middleware("http")

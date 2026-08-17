@@ -19,6 +19,7 @@ Three rules the implementation exists to enforce:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import time
 import uuid
 from typing import TYPE_CHECKING, Any
@@ -293,6 +294,13 @@ class Scheduler:
 
             results.append({"step": index, "module": step.module, "tool": step.tool, "result": result})
             if not result.get("ok"):
+                # A scheduled step that resolved to "confirm" created a pending
+                # row nobody asked for. Cancel it: an unattended routine must not
+                # leave a destructive confirmation card sitting for a signed-in
+                # human to approve out of band, detached from the routine.
+                if result.get("error") == "confirmation_required" and result.get("pending_id"):
+                    with contextlib.suppress(Exception):
+                        await self._api.cancel(str(result["pending_id"]))
                 log.warning(
                     "schedule_step_failed",
                     schedule=entry.id,

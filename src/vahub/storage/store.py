@@ -300,8 +300,14 @@ class Store:
         target = Path(dest)
         if target.exists():
             raise FileExistsError(f"backup target already exists: {target}")
-        target.parent.mkdir(parents=True, exist_ok=True)
+        # The backup is a full, unencrypted copy of a database that holds password
+        # hashes, session tokens, module secrets and tool arguments, so it must be
+        # as private as the live file: a 0700 directory and a 0600 file, not
+        # whatever the umask would give (typically world-readable).
+        target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        _chmod_quiet(target.parent, 0o700)
         await self.db.execute("VACUUM INTO ?", (str(target),))
+        _chmod_quiet(target, 0o600)
         return target
 
     # --- audit log ---------------------------------------------------------

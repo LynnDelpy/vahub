@@ -113,3 +113,12 @@ async def test_writes_are_origin_checked(client) -> None:
         "/api/locations/home", json={"label": "x"}, headers={"origin": "https://evil.example"}
     )
     assert r.status_code == 403
+
+
+async def test_delete_setting_rejects_the_memory_namespace(client, rt) -> None:
+    # The preferences editor must not touch the assistant's memory: namespace,
+    # for DELETE as well as PUT.
+    await rt.store.set_setting("memory:anniversary", "2018-06-01")
+    r = await client.delete("/api/settings/memory:anniversary")
+    assert r.status_code == 400 and r.json()["error"] == "reserved_key"
+    assert await rt.store.get_setting("memory:anniversary") == "2018-06-01"  # untouched

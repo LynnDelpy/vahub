@@ -50,7 +50,7 @@ async def api_and_store(construct, state_dir: Path, modules_dir: Path):
     sup = Supervisor(bus, modules_dir=modules_dir, state_dir=state_dir, config_dir=modules_dir.parent)
     api = ModuleAPI(sup, gate=Gate(config.policy), store=store, bus=bus)
     scheduler = Scheduler(api, bus, config, store=store)
-    sup.modules[CORE_MODULE] = build_core_module(store, scheduler)
+    sup.modules[CORE_MODULE] = build_core_module(store, scheduler, sup)
     try:
         yield api, store
     finally:
@@ -90,3 +90,35 @@ async def test_create_schedule_persists_and_runs_as_scheduler(api_and_store) -> 
     assert result["ok"] is True
     rows = await store.list_dyn_schedules()
     assert len(rows) == 1 and rows[0]["created_by"] == "assistant"
+
+
+async def test_add_list_and_remove_dashboard_cards(api_and_store) -> None:
+    api, store = api_and_store
+    # A card must be backed by a declared read tool; core.list_locations is one.
+    added = await _call(api, "add_card", {"module": "core", "tool": "list_locations", "title": "Places"})
+    assert added["ok"] is True
+    card = added["result"]["card"]
+    assert card["module"] == "core" and card["tool"] == "list_locations" and card["title"] == "Places"
+
+    # It is stored in the single global dashboard setting the browser reads.
+    stored = await store.get_setting("ui:dashboard")
+    assert isinstance(stored, list) and [c["id"] for c in stored] == [card["id"]]
+
+    listed = await _call(api, "list_cards", {})
+    assert [c["id"] for c in listed["result"]["cards"]] == [card["id"]]
+
+    removed = await _call(api, "remove_card", {"id": card["id"]})
+    assert removed["ok"] is True and removed["result"]["removed"] == 1
+    assert await store.get_setting("ui:dashboard") == []
+
+
+async def test_add_card_refuses_write_tools_and_unknown_tools(api_and_store) -> None:
+    api, store = api_and_store
+    # A write tool cannot back a card (the render path only runs read tools).
+    write = await _call(api, "add_card", {"module": "core", "tool": "set_location"})
+    assert write["ok"] is False
+    # Nor can a tool that does not exist.
+    missing = await _call(api, "add_card", {"module": "nope", "tool": "nope"})
+    assert missing["ok"] is False
+    # Neither attempt left anything behind.
+    assert (await store.get_setting("ui:dashboard")) in (None, [])

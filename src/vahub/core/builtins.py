@@ -16,6 +16,7 @@ the policy or the accounts. A schedule they create still runs as principal
 
 from __future__ import annotations
 
+import hashlib
 import json
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
@@ -27,8 +28,14 @@ from .supervisor import Module, State
 if TYPE_CHECKING:
     from ..scheduler import Scheduler
     from ..storage.store import Store
+    from .supervisor import Supervisor
 
 CORE_MODULE = "core"
+
+# The home dashboard is one global list of cards (built-in widgets and cards that
+# show a module read-tool's result). It lives in a single setting so the agent,
+# which has no per-request user context, can pin a card the browser will show.
+DASHBOARD_KEY = "ui:dashboard"
 
 Handler = Callable[[dict[str, Any]], Awaitable[Any]]
 
@@ -172,6 +179,41 @@ TOOL_DEFS: list[tuple[str, str, str, dict[str, Any]]] = [
             required=["id", "enabled"],
         ),
     ),
+    (
+        "list_cards",
+        "read",
+        "List the cards pinned to the home dashboard.",
+        _obj({}),
+    ),
+    (
+        "add_card",
+        "write",
+        "Pin a card to the home dashboard that shows the live result of a module's read-only tool. "
+        'For example module "transit" tool "next_departures" with args {"station": "Zurich HB"} pins a '
+        "departures board; module \"weather\" tool \"forecast\" pins the weather. Pick a read tool from "
+        "the module catalog and give the arguments it needs. Give a short human title when you can.",
+        _obj(
+            {
+                "module": {**_STR, "maxLength": 40},
+                "tool": {**_STR, "maxLength": 60},
+                "args": {"type": "object"},
+                "title": {**_STR, "maxLength": 80},
+            },
+            required=["module", "tool"],
+        ),
+    ),
+    (
+        "remove_card",
+        "write",
+        "Remove a pinned dashboard card, by its id or by the module and tool it shows.",
+        _obj(
+            {
+                "id": {**_STR, "maxLength": 120},
+                "module": {**_STR, "maxLength": 40},
+                "tool": {**_STR, "maxLength": 60},
+            },
+        ),
+    ),
 ]
 
 
@@ -217,10 +259,44 @@ CORE_RULES: dict[str, dict[str, Any]] = {
         "class": "write",
         "constraints": {"id": {"max_len": 40}, "enabled": {"in": [True, False]}},
     },
+    "core.list_cards": {"class": "read", "constraints": {}},
+    "core.add_card": {
+        "class": "write",
+        "constraints": {
+            "module": {"max_len": 40},
+            "tool": {"max_len": 60},
+            "args": {"max_len": 20},
+            "title": {"max_len": 80},
+        },
+    },
+    "core.remove_card": {
+        "class": "write",
+        "constraints": {"id": {"max_len": 120}, "module": {"max_len": 40}, "tool": {"max_len": 60}},
+    },
 }
 
 
-def _handlers(store: Store, scheduler: Scheduler) -> dict[str, Handler]:
+def _card_id(module: str, tool: str, args: dict[str, Any]) -> str:
+    """A stable id for a card, so pinning the same tool with the same arguments
+    twice replaces rather than duplicates."""
+    base = f"{module}.{tool}"
+    if not args:
+        return base
+    digest = hashlib.sha1(json.dumps(args, sort_keys=True, default=str).encode()).hexdigest()[:8]
+    return f"{base}:{digest}"
+
+
+def _default_title(module: str, tool: str, args: dict[str, Any]) -> str:
+    words = tool.replace("_", " ").strip()
+    label = (words[:1].upper() + words[1:]) if words else module
+    for key in ("station", "from", "query", "name", "location", "city", "q"):
+        value = args.get(key)
+        if isinstance(value, str) and value.strip():
+            return f"{label} · {value.strip()}"
+    return label
+
+
+def _handlers(store: Store, scheduler: Scheduler, supervisor: Supervisor) -> dict[str, Handler]:
     async def list_locations(_: dict[str, Any]) -> Any:
         return {"locations": await store.list_locations()}
 
@@ -288,6 +364,58 @@ def _handlers(store: Store, scheduler: Scheduler) -> dict[str, Handler]:
             raise BuiltinError(str(result.get("detail") or result.get("error")))
         return result
 
+    async def _dashboard() -> list[dict[str, Any]]:
+        cards = await store.get_setting(DASHBOARD_KEY)
+        return [c for c in cards if isinstance(c, dict)] if isinstance(cards, list) else []
+
+    async def list_cards(_: dict[str, Any]) -> Any:
+        return {"cards": await _dashboard()}
+
+    async def add_card(a: dict[str, Any]) -> Any:
+        module = str(a.get("module") or "").strip()
+        tool = str(a.get("tool") or "").strip()
+        if not module or not tool:
+            raise BuiltinError("module and tool are required")
+        # A card reads through the owner read-tool path, which runs only tools a
+        # module declares read. Refuse anything else up front, so a pinned card
+        # cannot be a write and cannot be a tool that does not exist.
+        mod = supervisor.modules.get(module)
+        spec = mod.manifest.tools.get(tool) if (mod is not None and mod.manifest is not None) else None
+        if spec is None:
+            raise BuiltinError(f"{module}.{tool} is not an installed tool")
+        if spec.cls != "read":
+            raise BuiltinError(f"{module}.{tool} is not a read tool, so it cannot back a card")
+        raw_args = a.get("args")
+        args: dict[str, Any] = raw_args if isinstance(raw_args, dict) else {}
+        title = str(a.get("title") or "").strip() or _default_title(module, tool, args)
+        card = {
+            "id": _card_id(module, tool, args),
+            "type": "tool",
+            "module": module,
+            "tool": tool,
+            "args": args,
+            "title": title,
+        }
+        cards = [c for c in await _dashboard() if c.get("id") != card["id"]]
+        cards.append(card)
+        await store.set_setting(DASHBOARD_KEY, cards)
+        return {"ok": True, "card": card}
+
+    async def remove_card(a: dict[str, Any]) -> Any:
+        card_id = a.get("id")
+        module = a.get("module")
+        tool = a.get("tool")
+
+        def drop(c: dict[str, Any]) -> bool:
+            if card_id and c.get("id") == card_id:
+                return True
+            return bool(module and tool and c.get("module") == module and c.get("tool") == tool)
+
+        cards = await _dashboard()
+        remaining = [c for c in cards if not drop(c)]
+        await store.set_setting(DASHBOARD_KEY, remaining)
+        return {"ok": len(remaining) < len(cards), "removed": len(cards) - len(remaining)}
+
     return {
         "list_locations": list_locations,
         "set_location": set_location,
@@ -300,10 +428,13 @@ def _handlers(store: Store, scheduler: Scheduler) -> dict[str, Handler]:
         "create_schedule": create_schedule,
         "delete_schedule": delete_schedule,
         "set_schedule_enabled": set_schedule_enabled,
+        "list_cards": list_cards,
+        "add_card": add_card,
+        "remove_card": remove_card,
     }
 
 
-def build_core_module(store: Store, scheduler: Scheduler) -> Module:
+def build_core_module(store: Store, scheduler: Scheduler, supervisor: Supervisor) -> Module:
     """Assemble the synthetic `core` module: a manifest, a live tool list for the
     catalog, and an in-process client. It is inserted into the supervisor's module
     map and is ready from the start."""
@@ -323,6 +454,6 @@ def build_core_module(store: Store, scheduler: Scheduler) -> Module:
     return Module(
         manifest=manifest,
         state=State.READY,
-        client=BuiltinClient(_handlers(store, scheduler)),  # type: ignore[arg-type]
+        client=BuiltinClient(_handlers(store, scheduler, supervisor)),  # type: ignore[arg-type]
         tools=tools,
     )

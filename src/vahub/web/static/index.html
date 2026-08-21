@@ -8,162 +8,228 @@
 <title>Assistant</title>
 <style nonce="__CSP_NONCE__">
   /*
-   * The assistant, plus a signed-in owner's own settings: saved places, things
-   * to remember, and recurring routines. It is not an operator console; module
-   * states, stderr, the tool catalogue and the audit log are for whoever runs
-   * the service, who has the CLI. Everything a module or the model produced is
+   * The assistant, plus a signed-in owner's own things: a home dashboard of
+   * cards they arrange, and one Settings tab that holds saved places, routines,
+   * modules, preferences and appearance. It is not an operator console; module
+   * stderr, the tool catalogue and the audit log are for whoever runs the
+   * service, who has the CLI. Everything a module or the model produced is
    * inserted as text, never as markup.
    *
-   * No external fonts, scripts or images, so it works on a network with no
-   * route to the internet and leaks nothing to a third party.
+   * No external fonts, scripts or images, so it works on a network with no route
+   * to the internet and leaks nothing to a third party. The accent colour and
+   * light/dark choice are set by the owner and stored on the hub.
    */
   :root {
     color-scheme: light dark;
-    --bg: #ffffff; --fg: #17181c; --muted: #6a6f7a; --line: #e3e5ea;
-    --mine: #2f6feb; --mine-fg: #ffffff; --theirs: #f2f3f5;
-    --warn-bg: #fff6e5; --warn-line: #e5a63a; --danger: #c8372d;
-    --card: #fafbfc; --radius: 14px;
+    /* warm, cozy light palette */
+    --bg: #f6f1ea; --surface: #fffdfa; --surface-2: #f0e9df; --raised: #fffefb;
+    --fg: #2a2621; --muted: #857b6c; --line: #e7ddd0; --line-soft: #efe7db;
+    --theirs: #f0e9df; --mine-fg: #ffffff;
+    --warn-bg: #fdf1dc; --warn-line: #d99a2b; --danger: #d1432c; --ok: #2f9e57;
+    /* accent (overridden live from the owner's choice) */
+    --accent: #ef6a3d; --accent-weak: rgba(239,106,61,.16); --accent-weaker: rgba(239,106,61,.09);
+    --accent-fg: #ffffff;
+    --radius: 20px; --radius-sm: 13px; --radius-xs: 9px;
+    --shadow: 0 1px 2px rgba(60,40,20,.05), 0 6px 20px rgba(60,40,20,.06);
+    --shadow-sm: 0 1px 2px rgba(60,40,20,.06);
   }
+  /* warm charcoal dark palette, applied by system default or an explicit choice */
   @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #16171a; --fg: #e9eaee; --muted: #9aa0ab; --line: #2b2d33;
-      --mine: #3b7bf0; --theirs: #232529; --warn-bg: #2e2717; --warn-line: #9a7420;
-      --danger: #f0645a; --card: #1d1f23;
+    :root:not([data-theme="light"]) {
+      --bg: #17130f; --surface: #201b16; --surface-2: #2a231d; --raised: #241e18;
+      --fg: #efe7dc; --muted: #a99e8d; --line: #322a22; --line-soft: #2a231d;
+      --theirs: #2a231d;
+      --warn-bg: #2e2413; --warn-line: #b98a2f; --danger: #ef6a5a; --ok: #4bb273;
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.35);
+      --shadow-sm: 0 1px 2px rgba(0,0,0,.35);
     }
   }
+  :root[data-theme="dark"] {
+    --bg: #17130f; --surface: #201b16; --surface-2: #2a231d; --raised: #241e18;
+    --fg: #efe7dc; --muted: #a99e8d; --line: #322a22; --line-soft: #2a231d;
+    --theirs: #2a231d;
+    --warn-bg: #2e2413; --warn-line: #b98a2f; --danger: #ef6a5a; --ok: #4bb273;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.35);
+    --shadow-sm: 0 1px 2px rgba(0,0,0,.35);
+  }
+
   * { box-sizing: border-box; }
   html, body { height: 100%; }
   body {
     margin: 0; background: var(--bg); color: var(--fg);
-    font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-    display: flex; flex-direction: column;
+    font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+    display: flex; flex-direction: column; -webkit-font-smoothing: antialiased;
   }
+
+  /* ---- top bar ---- */
   header {
-    padding: .7rem 1rem; border-bottom: 1px solid var(--line);
-    display: flex; align-items: center; gap: .6rem; flex-wrap: wrap;
+    position: sticky; top: 0; z-index: 5;
+    padding: .6rem .9rem; display: flex; align-items: center; gap: .7rem; flex-wrap: wrap;
+    background: linear-gradient(100deg, var(--accent-weak), transparent 55%), var(--surface);
+    border-bottom: 1px solid var(--line);
   }
-  header h1 { font-size: 1rem; font-weight: 600; margin: 0; letter-spacing: .01em; }
-  header .state { font-size: .8rem; color: var(--muted); }
-  header .spacer { flex: 1; }
-  header .who { font-size: .8rem; color: var(--muted); }
-  nav { display: flex; gap: .2rem; }
+  header .brand { display: flex; align-items: center; gap: .5rem; font-weight: 700; letter-spacing: .01em; }
+  header .brand .dot { width: 1.35rem; height: 1.35rem; border-radius: 8px; display: grid; place-items: center;
+    background: var(--accent); color: var(--accent-fg); font-size: .9rem; box-shadow: var(--shadow-sm); }
+  header .brand h1 { font-size: 1.02rem; margin: 0; font-weight: 700; }
+  nav { display: flex; gap: .25rem; background: var(--surface-2); padding: .22rem; border-radius: 999px; }
   nav button {
-    font: inherit; font-size: .9rem; padding: .35rem .7rem; border-radius: 9px; cursor: pointer;
-    border: 1px solid transparent; background: transparent; color: var(--muted);
+    font: inherit; font-size: .9rem; padding: .38rem .85rem; border-radius: 999px; cursor: pointer;
+    border: 1px solid transparent; background: transparent; color: var(--muted); display: flex; align-items: center; gap: .35rem;
   }
-  nav button.active { background: var(--theirs); color: var(--fg); }
-  .linkbtn { font: inherit; font-size: .8rem; background: none; border: none; color: var(--mine); cursor: pointer; padding: 0; }
+  nav button:hover { color: var(--fg); }
+  nav button.active { background: var(--raised); color: var(--fg); box-shadow: var(--shadow-sm); }
+  header .spacer { flex: 1; }
+  header .who { font-size: .82rem; color: var(--muted); }
+  header .state { font-size: .78rem; color: var(--muted); }
+  .linkbtn { font: inherit; font-size: .82rem; background: none; border: none; color: var(--accent); cursor: pointer; padding: .2rem .3rem; border-radius: 6px; }
+  .linkbtn:hover { background: var(--accent-weaker); }
 
   main { flex: 1; overflow-y: auto; }
-  .panel { display: none; padding: 1rem; max-width: 46rem; width: 100%; margin: 0 auto; }
+  .panel { display: none; padding: 1.1rem clamp(.8rem, 4vw, 1.4rem) 2.4rem; max-width: 62rem; width: 100%; margin: 0 auto; }
   .panel.active { display: block; }
-  #thread.active { display: flex; flex-direction: column; gap: .7rem; }
+  #thread.active { display: flex; flex-direction: column; gap: .7rem; max-width: 48rem; }
 
-  .msg { padding: .6rem .85rem; border-radius: var(--radius); max-width: 85%; white-space: pre-wrap; overflow-wrap: anywhere; }
-  .msg.mine { align-self: flex-end; background: var(--mine); color: var(--mine-fg); border-bottom-right-radius: 5px; }
-  .msg.theirs { align-self: flex-start; background: var(--theirs); border-bottom-left-radius: 5px; }
-  .msg.problem { align-self: flex-start; background: transparent; color: var(--danger); border: 1px solid var(--danger); }
-  .msg.thinking { color: var(--muted); font-style: italic; }
-  .empty { margin: 2rem auto; text-align: center; color: var(--muted); max-width: 26rem; }
+  h2 { font-size: 1.28rem; margin: 0 0 .2rem; letter-spacing: -.01em; }
+  .sub { color: var(--muted); font-size: .9rem; margin: 0 0 1.1rem; }
+  .muted { color: var(--muted); }
+
+  /* ---- chat ---- */
+  .msg { padding: .6rem .9rem; border-radius: var(--radius-sm); max-width: 85%; white-space: pre-wrap; overflow-wrap: anywhere; box-shadow: var(--shadow-sm); }
+  .msg.mine { align-self: flex-end; background: var(--accent); color: var(--accent-fg); border-bottom-right-radius: 5px; }
+  .msg.theirs { align-self: flex-start; background: var(--surface); border: 1px solid var(--line); border-bottom-left-radius: 5px; }
+  .msg.problem { align-self: flex-start; background: transparent; color: var(--danger); border: 1px solid var(--danger); box-shadow: none; }
+  .msg.thinking { color: var(--muted); font-style: italic; box-shadow: none; background: transparent; border: none; }
+  .empty { margin: 3rem auto; text-align: center; color: var(--muted); max-width: 28rem; }
   .empty p { margin: .4rem 0; }
   .empty .examples { font-size: .9rem; }
 
-  .approval { align-self: stretch; background: var(--warn-bg); border: 1px solid var(--warn-line); border-radius: var(--radius); padding: .8rem .9rem; }
+  .approval { align-self: stretch; background: var(--warn-bg); border: 1px solid var(--warn-line); border-radius: var(--radius-sm); padding: .85rem .95rem; }
   .approval p { margin: 0 0 .7rem; }
   .approval .what { font-weight: 600; }
-  .approval .args { margin: 0 0 .7rem; padding: .5rem .7rem; list-style: none; border: 1px solid var(--line); border-radius: 8px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .82rem; }
+  .approval .args { margin: 0 0 .7rem; padding: .5rem .7rem; list-style: none; border: 1px solid var(--line); border-radius: 8px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .82rem; background: var(--surface); }
   .approval .args li { overflow-wrap: anywhere; }
   .approval .row { display: flex; gap: .5rem; flex-wrap: wrap; }
-  .approval button { font: inherit; padding: .45rem .9rem; border-radius: 9px; border: 1px solid transparent; cursor: pointer; }
+  .approval button { font: inherit; padding: .45rem .95rem; border-radius: var(--radius-xs); border: 1px solid transparent; cursor: pointer; }
   .approval .yes { background: var(--danger); color: #fff; }
   .approval .no { background: transparent; border-color: var(--line); color: var(--fg); }
   .approval .expiry { font-size: .82rem; color: var(--muted); margin-left: auto; align-self: center; }
 
-  footer { border-top: 1px solid var(--line); padding: .7rem 1rem 1rem; }
-  .composer { display: flex; gap: .5rem; max-width: 46rem; margin: 0 auto; }
-  .composer input[type=text] { flex: 1; font: inherit; padding: .65rem .8rem; border-radius: 11px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); min-width: 0; }
-  .composer input[type=text]:focus { outline: 2px solid var(--mine); outline-offset: -1px; }
-  .composer button { font: inherit; padding: .65rem .9rem; border-radius: 11px; cursor: pointer; border: 1px solid var(--line); background: var(--theirs); color: var(--fg); }
-  .composer .send { background: var(--mine); color: var(--mine-fg); border-color: transparent; }
+  footer { border-top: 1px solid var(--line); padding: .7rem .9rem 1rem; background: var(--surface); }
+  .composer { display: flex; gap: .5rem; max-width: 48rem; margin: 0 auto; }
+  .composer input[type=text] { flex: 1; font: inherit; padding: .7rem .9rem; border-radius: 999px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); min-width: 0; }
+  .composer input[type=text]:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  .composer button { font: inherit; padding: .7rem 1rem; border-radius: 999px; cursor: pointer; border: 1px solid var(--line); background: var(--surface-2); color: var(--fg); }
+  .composer .send { background: var(--accent); color: var(--accent-fg); border-color: transparent; }
   .composer button[disabled] { opacity: .5; cursor: default; }
   .composer .mic.recording { background: var(--danger); color: #fff; border-color: transparent; }
-  .hint { max-width: 46rem; margin: .5rem auto 0; font-size: .8rem; color: var(--muted); display: flex; gap: 1rem; }
+  .hint { max-width: 48rem; margin: .5rem auto 0; font-size: .8rem; color: var(--muted); display: flex; gap: 1rem; }
   .hint label { cursor: pointer; }
 
-  /* forms and lists shared by the settings panels */
-  h2 { font-size: 1rem; margin: 0 0 .3rem; }
-  .sub { color: var(--muted); font-size: .85rem; margin: 0 0 1rem; }
-  .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 1rem; margin-bottom: 1.2rem; }
-  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: .6rem; }
-  .grid .full { grid-column: 1 / -1; }
-  label.field { display: flex; flex-direction: column; gap: .2rem; font-size: .8rem; color: var(--muted); }
-  input, textarea, select { font: inherit; padding: .5rem .6rem; border-radius: 9px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); width: 100%; }
+  /* ---- generic controls ---- */
+  input, textarea, select { font: inherit; padding: .55rem .65rem; border-radius: var(--radius-xs); border: 1px solid var(--line); background: var(--bg); color: var(--fg); width: 100%; }
+  input:focus, textarea:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
   textarea { resize: vertical; min-height: 3rem; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .85rem; }
-  .btn { font: inherit; padding: .5rem .9rem; border-radius: 9px; cursor: pointer; border: 1px solid var(--line); background: var(--theirs); color: var(--fg); }
-  .btn.primary { background: var(--mine); color: var(--mine-fg); border-color: transparent; }
-  .btn.small { padding: .25rem .55rem; font-size: .82rem; }
+  .btn { font: inherit; padding: .55rem .95rem; border-radius: var(--radius-xs); cursor: pointer; border: 1px solid var(--line); background: var(--surface-2); color: var(--fg); display: inline-flex; align-items: center; gap: .35rem; }
+  .btn:hover { border-color: var(--muted); }
+  .btn.primary { background: var(--accent); color: var(--accent-fg); border-color: transparent; }
+  .btn.primary:hover { filter: brightness(1.05); }
+  .btn.ghost { background: transparent; }
+  .btn.small { padding: .3rem .6rem; font-size: .82rem; }
   .btn.danger { color: var(--danger); }
-  .row-actions { margin-top: .8rem; display: flex; gap: .5rem; }
+  .row-actions { margin-top: .9rem; display: flex; gap: .5rem; flex-wrap: wrap; }
+  .err { color: var(--danger); font-size: .85rem; min-height: 1.1em; }
+  .note { font-size: .84rem; color: var(--muted); }
+
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 1.1rem; margin-bottom: 1.1rem; box-shadow: var(--shadow); }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: .7rem; }
+  .grid .full { grid-column: 1 / -1; }
+  label.field { display: flex; flex-direction: column; gap: .25rem; font-size: .78rem; color: var(--muted); font-weight: 600; }
   .items { list-style: none; padding: 0; margin: 0; }
-  .items li { display: flex; align-items: center; gap: .6rem; padding: .55rem 0; border-top: 1px solid var(--line); }
+  .items li { display: flex; align-items: center; gap: .6rem; padding: .6rem 0; border-top: 1px solid var(--line-soft); }
+  .items li:first-child { border-top: none; }
   .items li .grow { flex: 1; min-width: 0; overflow-wrap: anywhere; }
-  .items .meta { color: var(--muted); font-size: .82rem; }
-  .note { font-size: .82rem; color: var(--muted); }
-  .err { color: var(--danger); font-size: .85rem; min-height: 1.2em; }
+  .items .meta { color: var(--muted); font-size: .84rem; }
+
+  /* ---- settings sub-navigation ---- */
+  .subnav { display: flex; gap: .3rem; flex-wrap: wrap; margin-bottom: 1.2rem; }
+  .subtab { font: inherit; font-size: .9rem; padding: .45rem .85rem; border-radius: 999px; cursor: pointer; border: 1px solid var(--line); background: var(--surface); color: var(--muted); }
+  .subtab:hover { color: var(--fg); }
+  .subtab.active { background: var(--accent-weak); border-color: transparent; color: var(--fg); font-weight: 600; }
 
   /* module state badges and per-module config rows */
-  .badge { font-size: .72rem; padding: .1rem .45rem; border-radius: 6px; border: 1px solid var(--line); color: var(--muted); text-transform: uppercase; letter-spacing: .03em; }
-  .badge.ready { color: #1a7f37; border-color: #1a7f3733; background: #1a7f3712; }
+  .badge { font-size: .7rem; padding: .12rem .5rem; border-radius: 6px; border: 1px solid var(--line); color: var(--muted); text-transform: uppercase; letter-spacing: .03em; }
+  .badge.ready { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 45%, transparent); background: color-mix(in srgb, var(--ok) 12%, transparent); }
   .badge.unconfigured, .badge.degraded, .badge.stopped { color: var(--warn-line); border-color: var(--warn-line); }
   .badge.failed { color: var(--danger); border-color: var(--danger); }
-  .cfgrow { display: flex; align-items: center; gap: .5rem; padding: .4rem 0; border-top: 1px solid var(--line); }
+  .cfgrow { display: flex; align-items: center; gap: .5rem; padding: .45rem 0; border-top: 1px solid var(--line-soft); flex-wrap: wrap; }
   .cfgrow .key { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .82rem; min-width: 9rem; overflow-wrap: anywhere; }
   .cfgrow input { flex: 1; min-width: 6rem; }
   .cfgrow .req { color: var(--danger); }
+  .modhead { display: flex; align-items: center; gap: .55rem; }
+  .modhead .spacer { flex: 1; }
 
-  /* service dashboard cards (github, gitlab, email) */
-  .tiles { display: flex; gap: .8rem; margin-bottom: .3rem; }
-  .tiles .tile { text-align: center; }
-  .tiles .tile .n { font-size: 1.6rem; font-weight: 600; font-variant-numeric: tabular-nums; display: block; }
-  .tiles .tile .l { font-size: .7rem; color: var(--muted); text-transform: uppercase; letter-spacing: .02em; }
-
-  /* home dashboard: a grid of cards you arrange */
-  .home-head { display: flex; align-items: baseline; gap: .6rem; margin-bottom: .8rem; }
+  /* ---- home dashboard ---- */
+  .home-head { display: flex; align-items: center; gap: .6rem; margin-bottom: 1rem; }
   .home-head h2 { margin: 0; }
   .home-head .spacer { flex: 1; }
-  .grid-wrap { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: .9rem; }
-  .widget { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: .9rem; }
+  .grid-wrap { display: grid; grid-template-columns: repeat(auto-fill, minmax(15.5rem, 1fr)); gap: 1rem; align-items: start; }
+  .widget { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: .55rem .95rem 1rem; box-shadow: var(--shadow); }
   .widget.wide { grid-column: 1 / -1; }
-  .widget h3 { margin: 0 0 .5rem; font-size: .9rem; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .03em; }
-  .widget .big { font-size: 2rem; font-weight: 600; font-variant-numeric: tabular-nums; }
-  .widget ul { list-style: none; margin: 0; padding: 0; }
-  .widget li { padding: .3rem 0; border-top: 1px solid var(--line); overflow-wrap: anywhere; }
-  .widget li:first-child { border-top: none; }
-  .widget .muted { color: var(--muted); font-size: .85rem; }
-  .widget-edit { margin-top: .7rem; display: flex; gap: .35rem; border-top: 1px dashed var(--line); padding-top: .6rem; }
+  .widget.dragging { opacity: .55; outline: 2px dashed var(--accent); }
+  .widget-head { display: flex; align-items: center; gap: .5rem; padding: .35rem 0 .5rem; }
+  .widget-head .emoji { font-size: 1.05rem; }
+  .widget-head h3 { margin: 0; font-size: .84rem; color: var(--fg); font-weight: 700; text-transform: none; letter-spacing: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .widget-head .spacer { flex: 1; }
+  .grip { cursor: grab; touch-action: none; background: transparent; border: none; color: var(--muted); font-size: 1rem; padding: .15rem .3rem; border-radius: 6px; line-height: 1; }
+  .grip:hover { background: var(--surface-2); color: var(--fg); }
+  .grip:active { cursor: grabbing; }
+  .cardx { background: transparent; border: none; color: var(--muted); font-size: 1.15rem; line-height: 1; padding: .05rem .35rem; border-radius: 6px; cursor: pointer; }
+  .cardx:hover { background: var(--accent-weaker); color: var(--danger); }
+  .widget-body .big { font-size: 2.1rem; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+  .widget-body ul { list-style: none; margin: .1rem 0 0; padding: 0; }
+  .widget-body li { padding: .32rem 0; border-top: 1px solid var(--line-soft); overflow-wrap: anywhere; font-size: .92rem; }
+  .widget-body li:first-child { border-top: none; }
+  .tiles { display: flex; gap: 1.1rem; margin: .1rem 0 .3rem; flex-wrap: wrap; }
+  .tiles .tile .n { font-size: 1.7rem; font-weight: 700; font-variant-numeric: tabular-nums; display: block; letter-spacing: -.02em; }
+  .tiles .tile .l { font-size: .68rem; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+  .twoline strong { font-weight: 600; }
   .quickask { display: flex; gap: .4rem; }
   .quickask input { flex: 1; }
-  .home.editing .widget { outline: 1px dashed var(--warn-line); }
-  .picker { display: flex; gap: .4rem; flex-wrap: wrap; margin-top: .8rem; }
+
+  .adder { background: var(--surface); border: 1px dashed var(--accent); border-radius: var(--radius); padding: 1rem; margin-bottom: 1rem; }
+  .adder-title { margin: 0 0 .7rem; font-size: 1rem; }
+  .field-label { font-size: .74rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: .8rem 0 .4rem; }
+  .chiprow { display: flex; gap: .45rem; flex-wrap: wrap; }
+  .chip { font: inherit; font-size: .86rem; padding: .35rem .7rem; border-radius: 999px; border: 1px solid var(--line); background: var(--surface-2); color: var(--fg); cursor: pointer; }
+  .chip:hover { border-color: var(--accent); }
+  .adder-form { display: grid; grid-template-columns: 1fr 1fr; gap: .6rem; margin-top: .3rem; }
+  .adder-form .full { grid-column: 1 / -1; }
+
+  /* ---- appearance ---- */
+  .swatches { display: flex; gap: .6rem; flex-wrap: wrap; margin: .3rem 0 .2rem; }
+  .swatch { width: 2.3rem; height: 2.3rem; border-radius: 50%; border: 2px solid var(--line); cursor: pointer; padding: 0; position: relative; }
+  .swatch.active { border-color: var(--fg); }
+  .swatch.active::after { content: "✓"; position: absolute; inset: 0; display: grid; place-items: center; color: #fff; font-size: .95rem; text-shadow: 0 1px 2px rgba(0,0,0,.4); }
+  .segmented { display: inline-flex; gap: .25rem; background: var(--surface-2); padding: .22rem; border-radius: 999px; }
+  .segmented button { font: inherit; font-size: .86rem; padding: .35rem .8rem; border-radius: 999px; border: none; background: transparent; color: var(--muted); cursor: pointer; }
+  .segmented button.active { background: var(--raised); color: var(--fg); box-shadow: var(--shadow-sm); }
 
   /* login / setup overlay */
-  #gate { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; background: var(--bg); padding: 1rem; }
+  #gate { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; background: linear-gradient(160deg, var(--accent-weak), var(--bg) 60%); padding: 1rem; }
   #gate.active { display: flex; }
-  #gate .box { width: 100%; max-width: 22rem; }
+  #gate .box { width: 100%; max-width: 23rem; }
   #gate h1 { text-align: center; }
   .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 </style>
 </head>
 <body>
   <header id="topbar" hidden>
-    <h1>Assistant</h1>
+    <span class="brand"><span class="dot">◆</span><h1>vahub</h1></span>
     <nav id="nav">
-      <button data-tab="home" class="active" type="button">Home</button>
-      <button data-tab="thread" type="button">Chat</button>
-      <button data-tab="locations" type="button">Locations</button>
-      <button data-tab="settings" type="button">Settings</button>
-      <button data-tab="schedules" type="button">Schedules</button>
-      <button data-tab="modules" type="button">Modules</button>
+      <button data-tab="home" class="active" type="button">🏠 Home</button>
+      <button data-tab="thread" type="button">💬 Chat</button>
+      <button data-tab="settings" type="button">⚙️ Settings</button>
     </nav>
     <span class="spacer"></span>
     <span class="state" id="state" role="status" aria-live="polite"></span>
@@ -176,19 +242,16 @@
     <div class="panel" id="thread" aria-live="polite">
       <div class="empty" id="empty">
         <p>Ask for something.</p>
-        <p class="examples">"what time is it in Tokyo?"<br />"remember that my home is in Zurich"</p>
+        <p class="examples">"what time is it in Tokyo?"<br />"always show me departures from Zürich HB"</p>
       </div>
     </div>
-    <section class="panel" id="locations" aria-label="Saved locations"></section>
     <section class="panel" id="settings" aria-label="Settings"></section>
-    <section class="panel" id="schedules" aria-label="Schedules"></section>
-    <section class="panel" id="modules" aria-label="Modules"></section>
   </main>
 
   <footer id="composerBar" hidden>
     <div class="composer">
       <label class="visually-hidden" for="input">Message</label>
-      <input id="input" type="text" autocomplete="off" autocapitalize="sentences" placeholder="Ask something" />
+      <input id="input" type="text" autocomplete="off" autocapitalize="sentences" placeholder="Ask something, or say “show me…”" />
       <button id="mic" class="mic" type="button" title="Speak" aria-label="Speak">Speak</button>
       <button id="send" class="send" type="button">Send</button>
     </div>
@@ -219,11 +282,13 @@
         if (k === "class") node.className = props[k];
         else if (k === "text") node.textContent = props[k];
         else if (k === "type") node.type = props[k];
+        else if (k === "hidden") node.hidden = !!props[k];
         else if (k.slice(0, 2) === "on") node.addEventListener(k.slice(2), props[k]);
         else node.setAttribute(k, props[k]);
       });
     }
     (children || []).forEach(function (c) {
+      if (c == null) return;
       node.appendChild(typeof c === "string" ? document.createTextNode(c) : c);
     });
     return node;
@@ -245,7 +310,6 @@
 
   // A guarded GET returning 401 means the session expired mid-use. Send the user
   // to the login screen instead of rendering a misleading empty panel/widget.
-  // Returns true when it handled a 401, so callers can stop rendering.
   function reauthed(r) {
     if (r && r.status === 401) { dropToLogin(); return true; }
     return false;
@@ -260,6 +324,34 @@
   let config = { stt_provider: "browser", tts_provider: "browser" };
   const shown = new Set();
   let assistantStarted = false;
+
+  // ---- appearance: accent colour and theme -----------------------------
+  const ACCENTS = {
+    coral:  "#ef6a3d", amber: "#e29a2b", rose: "#e5508a", violet: "#8b5cf6",
+    indigo: "#5b6ef5", blue:  "#3b82f6", teal: "#12a594", green: "#3ea662",
+  };
+  const DEFAULT_ACCENT = "coral";
+  let currentAccent = DEFAULT_ACCENT;
+  let currentTheme = "auto";   // auto | light | dark
+
+  function hexToRgba(hex, a) {
+    const h = hex.replace("#", "");
+    const r = parseInt(h.slice(0, 2), 16), g = parseInt(h.slice(2, 4), 16), b = parseInt(h.slice(4, 6), 16);
+    return "rgba(" + r + "," + g + "," + b + "," + a + ")";
+  }
+  function applyAccent(name) {
+    const hex = ACCENTS[name] || ACCENTS[DEFAULT_ACCENT];
+    currentAccent = ACCENTS[name] ? name : DEFAULT_ACCENT;
+    const root = document.documentElement.style;
+    root.setProperty("--accent", hex);
+    root.setProperty("--accent-weak", hexToRgba(hex, 0.16));
+    root.setProperty("--accent-weaker", hexToRgba(hex, 0.09));
+  }
+  function applyTheme(name) {
+    currentTheme = (name === "light" || name === "dark") ? name : "auto";
+    if (currentTheme === "auto") document.documentElement.removeAttribute("data-theme");
+    else document.documentElement.setAttribute("data-theme", currentTheme);
+  }
 
   function atBottom() { return thread.scrollHeight - thread.scrollTop - thread.clientHeight < 60; }
   function scroll(force) { if (force || atBottom()) thread.scrollTop = thread.scrollHeight; }
@@ -305,11 +397,10 @@
     clearEmpty();
 
     const card = el("div", { class: "approval" });
-    const line = el("p", null, [
+    card.appendChild(el("p", null, [
       el("span", { text: "Needs your approval: " }),
       el("span", { class: "what", text: describe(p) }),
-    ]);
-    card.appendChild(line);
+    ]));
     const rows = argLines(p);
     if (rows.length) {
       card.appendChild(el("ul", { class: "args" }, rows.map(function (t) { return el("li", { text: t }); })));
@@ -356,9 +447,6 @@
   let reconnectTimer = null;
   function connect() {
     if (signedOut) return;
-    // Cancel any pending reconnect: without this, a timer scheduled while we were
-    // down can fire after a fresh socket exists and tear it down, and its onclose
-    // schedules the next one, churning forever after a logout+relogin.
     if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
     if (socket) { try { socket.close(); } catch (e) { /* already gone */ } socket = null; }
     let ws;
@@ -369,13 +457,10 @@
     socket = ws;
     ws.onopen = function () { setState(""); wsBackoff = 1000; loadPending(); };
     ws.onclose = function () {
-      // Only the current socket may drive a reconnect. A superseded socket (one
-      // connect() force-closed) firing its onclose must not schedule anything, or
-      // the teardown/rebuild becomes self-perpetuating. Also stop once signed out.
       if (ws !== socket || signedOut) return;
       setState("reconnecting");
       reconnectTimer = setTimeout(connect, wsBackoff);
-      wsBackoff = Math.min(wsBackoff * 2, 30000);   // back off instead of hammering
+      wsBackoff = Math.min(wsBackoff * 2, 30000);
     };
     ws.onmessage = function (ev) {
       let msg; try { msg = JSON.parse(ev.data); } catch (e) { return; }
@@ -400,6 +485,8 @@
       sessionId = r.data.session_id || sessionId;
       if (r.data.reply) { bubble(r.data.reply, "theirs"); speak(r.data.reply); }
       loadPending();
+      // A turn may have pinned or removed a card ("show me departures from here").
+      dashDirty = true;
     }
     sendBtn.disabled = false;
     input.focus();
@@ -448,16 +535,15 @@
           const resp = await fetch("/api/voice", { method: "POST", body: form });
           const data = await resp.json().catch(function () { return {}; });
           thinking.remove();
-          if (resp.status === 401) { dropToLogin(); return; }   // session expired mid-use
+          if (resp.status === 401) { dropToLogin(); return; }
           if (data.ok === false) { bubble(data.detail || data.error || "That did not work.", "problem"); return; }
           if (data.transcript) bubble(data.transcript, "mine");
           sessionId = data.session_id || sessionId;
           if (data.reply) bubble(data.reply, "theirs");
-          // The "read replies aloud" toggle governs both TTS paths: play the
-          // server's synthesized audio only when it is checked, as speak() does.
           if (data.audio && readBox.checked) new Audio("data:" + (data.audio_mime || "audio/mpeg") + ";base64," + data.audio).play();
           else speak(data.reply || "");
           loadPending();
+          dashDirty = true;
         } catch (e) { thinking.remove(); bubble("Could not send the recording.", "problem"); }
       };
       recorder.start();
@@ -466,8 +552,6 @@
   }
 
   function startAssistant() {
-    // One-time setup (speech, client config). The socket is opened by showApp so
-    // it reconnects on a fresh sign in; it is not started here.
     if (assistantStarted) return;
     assistantStarted = true;
     (async function () {
@@ -478,18 +562,460 @@
     })();
   }
 
-  // ---- panels: locations, settings, schedules ---------------------------
-  function panelErr(panel, msg) {
-    const box = panel.querySelector(".err");
-    if (box) box.textContent = msg || "";
+  // ======================================================================
+  //  HOME DASHBOARD
+  // ======================================================================
+  let currentUser = null;
+  let dashCards = null;      // array of card entries; null until loaded
+  let dashDirty = false;     // a chat/voice turn may have changed the cards
+  let adderOpen = false;
+  let clockTimer = null;
+
+  const EMOJI = {
+    clock: "⏰", quickask: "💬", places: "📍", routines: "🔁", notes: "🧠",
+    github: "🐙", gitlab: "🦊", email: "✉️", transit: "🚆", weather: "🌤️",
+    rss: "📰", calendar: "📅", obsidian: "🗒️", homelab: "🖥️", homeassistant: "💡",
+    core: "⭐", calculator: "🧮", notify: "🔔", time: "🕰️", _default: "📌",
+  };
+  function emojiFor(entry) {
+    if (entry.type === "widget") return EMOJI[entry.widget] || EMOJI._default;
+    return EMOJI[entry.module] || EMOJI._default;
   }
 
-  async function renderLocations() {
-    const panel = $("locations");
-    panel.textContent = "";
-    panel.appendChild(el("h2", { text: "Saved places" }));
-    panel.appendChild(el("p", { class: "sub", text: "Home, work, and anywhere the assistant should know by name." }));
+  function twoLine(primary, secondary) {
+    return el("span", { class: "twoline" }, [
+      el("strong", { text: primary || "" }),
+      el("span", { class: "muted", text: secondary ? "  " + secondary : "" }),
+    ]);
+  }
 
+  // A card backed by a module's read `summary` tool: fixed tiles + a recent list.
+  function serviceWidget(module, tiles, line) {
+    return async function (body) {
+      body.appendChild(el("div", { class: "muted", text: "Loading…" }));
+      const r = await api("POST", "/api/tools/" + module + "/summary", { args: {} });
+      body.textContent = "";
+      if (reauthed(r)) return;
+      if (!r.ok || !r.data.ok) { body.appendChild(el("div", { class: "muted", text: toolError(r) })); return; }
+      const p = r.data.result || {};
+      if (p.configured === false) { body.appendChild(el("div", { class: "muted", text: "Add its token in Settings › Modules." })); return; }
+      if (p.error) { body.appendChild(el("div", { class: "muted", text: String(p.error) })); return; }
+      const row = el("div", { class: "tiles" });
+      tiles.forEach(function (t) {
+        row.appendChild(el("div", { class: "tile" }, [
+          el("span", { class: "n", text: (p[t.key] == null ? "–" : String(p[t.key])) }),
+          el("span", { class: "l", text: t.label }),
+        ]));
+      });
+      body.appendChild(row);
+      const recent = p.recent || [];
+      if (recent.length) {
+        const ul = el("ul");
+        recent.slice(0, 5).forEach(function (item) { ul.appendChild(el("li", null, [line(item)])); });
+        body.appendChild(ul);
+      }
+    };
+  }
+
+  function toolError(r) {
+    const why = (r.data && r.data.error) || "";
+    if (why === "unknown_module") return "Not installed. Add it in Settings › Modules.";
+    if (why === "module_not_ready" || why === "not_readonly") return "Set it up in Settings › Modules.";
+    return "Unavailable right now.";
+  }
+
+  // A pinned card that shows any read tool's result, rendered generically.
+  function itemPrimary(it) {
+    if (it == null) return "";
+    if (typeof it !== "object") return String(it);
+    const line = it.line || it.route || it.number;
+    const dest = it.to || it.destination || it.headsign;
+    if (line && dest) return String(line) + " → " + String(dest);
+    const keys = ["title", "name", "summary", "subject", "label", "to", "destination", "from", "station", "headsign", "key", "query"];
+    for (let i = 0; i < keys.length; i++) if (it[keys[i]]) return String(it[keys[i]]);
+    return JSON.stringify(it).slice(0, 90);
+  }
+  function itemSecondary(it) {
+    if (it == null || typeof it !== "object") return "";
+    const keys = ["departure", "time", "at", "when", "platform", "published", "date", "repo", "project", "subject", "address", "value"];
+    const bits = [];
+    for (let i = 0; i < keys.length && bits.length < 2; i++) {
+      if (it[keys[i]] != null && it[keys[i]] !== "") bits.push(String(it[keys[i]]));
+    }
+    return bits.join("  ·  ");
+  }
+  function genericRender(body, result) {
+    if (!result || typeof result !== "object") { body.appendChild(el("div", { class: "muted", text: "No data." })); return; }
+    if (result.configured === false) { body.appendChild(el("div", { class: "muted", text: "Configure this module in Settings › Modules." })); return; }
+    if (result.error) { body.appendChild(el("div", { class: "muted", text: String(result.error) })); return; }
+    const tiles = [];
+    let arr = null;
+    Object.keys(result).forEach(function (k) {
+      const v = result[k];
+      if (typeof v === "number") tiles.push({ k: k, v: v });
+      else if (!arr && Array.isArray(v) && v.length) arr = v;
+    });
+    if (tiles.length) {
+      const row = el("div", { class: "tiles" });
+      tiles.slice(0, 4).forEach(function (t) {
+        row.appendChild(el("div", { class: "tile" }, [
+          el("span", { class: "n", text: String(t.v) }),
+          el("span", { class: "l", text: t.k.replace(/_/g, " ") }),
+        ]));
+      });
+      body.appendChild(row);
+    }
+    if (arr) {
+      const ul = el("ul");
+      arr.slice(0, 6).forEach(function (item) { ul.appendChild(el("li", null, [twoLine(itemPrimary(item), itemSecondary(item))])); });
+      body.appendChild(ul);
+    } else if (!tiles.length) {
+      body.appendChild(el("div", { class: "muted", text: "Nothing to show right now." }));
+    }
+  }
+  function toolCardRender(card) {
+    return async function (body) {
+      body.appendChild(el("div", { class: "muted", text: "Loading…" }));
+      const r = await api("POST", "/api/tools/" + encodeURIComponent(card.module) + "/" + encodeURIComponent(card.tool), { args: card.args || {} });
+      body.textContent = "";
+      if (reauthed(r)) return;
+      if (!r.ok || !r.data.ok) { body.appendChild(el("div", { class: "muted", text: toolError(r) })); return; }
+      genericRender(body, r.data.result || {});
+    };
+  }
+
+  const WIDGETS = {
+    clock:    { title: "Clock", render: renderClock },
+    quickask: { title: "Quick ask", wide: true, render: renderQuickAsk },
+    places:   { title: "Saved places", render: renderPlacesWidget },
+    routines: { title: "Upcoming routines", render: renderRoutinesWidget },
+    notes:    { title: "Assistant remembers", render: renderNotesWidget },
+    github:   { title: "GitHub", render: serviceWidget("github",
+      [{ key: "notifications", label: "Inbox" }, { key: "review_requests", label: "Reviews" }, { key: "assigned_issues", label: "Issues" }],
+      function (it) { return twoLine(it.title, it.repo); }) },
+    gitlab:   { title: "GitLab", render: serviceWidget("gitlab",
+      [{ key: "todos", label: "To-dos" }, { key: "assigned_merge_requests", label: "MRs" }, { key: "assigned_issues", label: "Issues" }],
+      function (it) { return twoLine(it.title, it.project); }) },
+    email:    { title: "Email", render: serviceWidget("email",
+      [{ key: "unread", label: "Unread" }, { key: "total", label: "Total" }],
+      function (it) { return twoLine(it.from, it.subject); }) },
+  };
+  function defaultDash() {
+    return [
+      { id: "w:clock", type: "widget", widget: "clock" },
+      { id: "w:quickask", type: "widget", widget: "quickask" },
+      { id: "w:places", type: "widget", widget: "places" },
+      { id: "w:routines", type: "widget", widget: "routines" },
+    ];
+  }
+  function stopClock() { if (clockTimer) { clearInterval(clockTimer); clockTimer = null; } }
+
+  async function loadDash() {
+    const r = await api("GET", "/api/settings");
+    if (reauthed(r)) return;
+    const settings = (r.ok && r.data && r.data.settings) || {};
+    // apply the owner's appearance while we have the settings in hand
+    if (settings["ui:accent"]) applyAccent(settings["ui:accent"]);
+    if (settings["ui:theme"]) applyTheme(settings["ui:theme"]);
+    let cards = settings["ui:dashboard"];
+    if (!Array.isArray(cards)) {
+      const old = settings["ui:layout:" + (currentUser || "_")];
+      if (Array.isArray(old) && old.length) {
+        cards = old.filter(function (k) { return WIDGETS[k]; }).map(function (k) { return { id: "w:" + k, type: "widget", widget: k }; });
+      } else {
+        cards = defaultDash();
+      }
+    }
+    dashCards = cards.filter(function (e) {
+      if (!e || typeof e !== "object") return false;
+      if (e.type === "widget") return !!WIDGETS[e.widget];
+      return e.type === "tool" && !!e.module && !!e.tool;
+    }).map(function (e) {
+      if (!e.id) e.id = e.type === "widget" ? ("w:" + e.widget) : (e.module + "." + e.tool);
+      if (e.type === "tool" && !e.args) e.args = {};
+      return e;
+    });
+    if (!dashCards.length) dashCards = defaultDash();
+  }
+  async function saveDash() {
+    await api("PUT", "/api/settings/" + encodeURIComponent("ui:dashboard"), { value: dashCards });
+  }
+
+  function hashArgs(args) {
+    const s = JSON.stringify(args);
+    let h = 5381;
+    for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) >>> 0;
+    return h.toString(16).slice(0, 8);
+  }
+  function toolCardTitle(module, tool, args) {
+    const words = tool.replace(/_/g, " ");
+    const label = words.charAt(0).toUpperCase() + words.slice(1);
+    const keys = ["station", "from", "query", "name", "location", "city", "q"];
+    for (let i = 0; i < keys.length; i++) {
+      if (typeof args[keys[i]] === "string" && args[keys[i]].trim()) return label + " · " + args[keys[i]].trim();
+    }
+    return label;
+  }
+
+  function addWidget(key) {
+    if (dashCards.some(function (e) { return e.type === "widget" && e.widget === key; })) return;
+    dashCards.push({ id: "w:" + key, type: "widget", widget: key });
+    adderOpen = false; saveDash(); renderHome();
+  }
+  function addToolCard(module, tool, args, title) {
+    const id = module + "." + tool + (Object.keys(args).length ? ":" + hashArgs(args) : "");
+    dashCards = dashCards.filter(function (e) { return e.id !== id; });
+    dashCards.push({ id: id, type: "tool", module: module, tool: tool, args: args, title: title || toolCardTitle(module, tool, args) });
+    adderOpen = false; saveDash(); renderHome();
+  }
+  function removeCard(id) {
+    dashCards = dashCards.filter(function (e) { return e.id !== id; });
+    saveDash(); renderHome();
+  }
+
+  // ---- drag to reorder (pointer based, works with mouse and touch) ------
+  function nearestCard(grid, exclude, x, y) {
+    let best = null, bd = Infinity;
+    Array.prototype.forEach.call(grid.children, function (c) {
+      if (c === exclude || !c.dataset || !c.dataset.id) return;
+      const r = c.getBoundingClientRect();
+      const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+      const d = (cx - x) * (cx - x) + (cy - y) * (cy - y);
+      if (d < bd) { bd = d; best = c; }
+    });
+    return best;
+  }
+  function commitOrder(grid) {
+    const order = Array.prototype.map.call(grid.children, function (c) { return c.dataset.id; }).filter(Boolean);
+    const byId = {};
+    dashCards.forEach(function (e) { byId[e.id] = e; });
+    const next = order.map(function (id) { return byId[id]; }).filter(Boolean);
+    if (next.length === dashCards.length) { dashCards = next; saveDash(); }
+  }
+  function attachDrag(handle, card) {
+    handle.addEventListener("pointerdown", function (e) {
+      e.preventDefault();
+      const grid = $("dashGrid");
+      if (!grid) return;
+      card.classList.add("dragging");
+      try { handle.setPointerCapture(e.pointerId); } catch (_) { /* ok */ }
+      const move = function (ev) {
+        const target = nearestCard(grid, card, ev.clientX, ev.clientY);
+        if (!target) return;
+        const r = target.getBoundingClientRect();
+        const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+        const sameRow = Math.abs(ev.clientY - cy) < r.height * 0.6;
+        const before = sameRow ? (ev.clientX < cx) : (ev.clientY < cy);
+        if (before) grid.insertBefore(card, target);
+        else grid.insertBefore(card, target.nextSibling);
+      };
+      const up = function () {
+        card.classList.remove("dragging");
+        handle.removeEventListener("pointermove", move);
+        handle.removeEventListener("pointerup", up);
+        handle.removeEventListener("pointercancel", up);
+        try { handle.releasePointerCapture(e.pointerId); } catch (_) { /* ok */ }
+        commitOrder(grid);
+      };
+      handle.addEventListener("pointermove", move);
+      handle.addEventListener("pointerup", up);
+      handle.addEventListener("pointercancel", up);
+    });
+  }
+
+  function buildCard(entry) {
+    const def = entry.type === "widget" ? WIDGETS[entry.widget] : null;
+    const card = el("div", { class: "widget" + (def && def.wide ? " wide" : "") });
+    card.dataset.id = entry.id;
+    const title = entry.type === "widget" ? (def ? def.title : entry.widget) : entry.title;
+    const grip = el("button", { class: "grip", type: "button", title: "Drag to reorder", "aria-label": "Drag to reorder", text: "⠿" });
+    const rm = el("button", { class: "cardx", type: "button", title: "Remove card", "aria-label": "Remove card", text: "×",
+      onclick: function () { removeCard(entry.id); } });
+    card.appendChild(el("div", { class: "widget-head" }, [
+      el("span", { class: "emoji", text: emojiFor(entry) }),
+      el("h3", { text: title || "Card" }),
+      el("span", { class: "spacer" }),
+      grip, rm,
+    ]));
+    const body = el("div", { class: "widget-body" });
+    card.appendChild(body);
+    if (entry.type === "widget" && def) def.render(body);
+    else if (entry.type === "tool") toolCardRender(entry)(body);
+    else body.appendChild(el("div", { class: "muted", text: "Unknown card." }));
+    attachDrag(grip, card);
+    return card;
+  }
+
+  async function buildAdder(container) {
+    container.textContent = "";
+    container.appendChild(el("h3", { class: "adder-title", text: "Add a card" }));
+    const present = {};
+    dashCards.forEach(function (e) { if (e.type === "widget") present[e.widget] = true; });
+    const chips = el("div", { class: "chiprow" });
+    Object.keys(WIDGETS).forEach(function (key) {
+      if (present[key]) return;
+      chips.appendChild(el("button", { class: "chip", type: "button", text: (EMOJI[key] || "") + " " + WIDGETS[key].title,
+        onclick: function () { addWidget(key); } }));
+    });
+    if (!chips.children.length) chips.appendChild(el("span", { class: "muted", text: "All the built-in cards are on your home." }));
+    container.appendChild(el("div", { class: "field-label", text: "Built-in" }));
+    container.appendChild(chips);
+
+    container.appendChild(el("div", { class: "field-label", text: "From a module" }));
+    const modSel = el("select");
+    const toolSel = el("select");
+    const argsInp = el("input", { type: "text", placeholder: 'arguments as JSON, e.g. {"station":"Zürich HB"}' });
+    const titleInp = el("input", { type: "text", placeholder: "title (optional)" });
+    const err = el("div", { class: "err" });
+    const addB = el("button", { class: "btn primary small", type: "button", text: "Add module card" });
+    modSel.appendChild(el("option", { value: "", text: "choose a module…" }));
+
+    const r = await api("GET", "/api/modules");
+    const mods = (r.ok && r.data.modules) || [];
+    const readTools = {};
+    mods.forEach(function (m) {
+      const rt = (m.tools || []).filter(function (t) { return t["class"] === "read"; }).map(function (t) { return t.name; });
+      if (!rt.length) return;
+      readTools[m.name] = rt;
+      modSel.appendChild(el("option", { value: m.name, text: m.name }));
+    });
+    const fillTools = function () {
+      toolSel.textContent = "";
+      (readTools[modSel.value] || []).forEach(function (tn) { toolSel.appendChild(el("option", { value: tn, text: tn })); });
+    };
+    modSel.addEventListener("change", fillTools);
+    addB.addEventListener("click", function () {
+      err.textContent = "";
+      const module = modSel.value, tool = toolSel.value;
+      if (!module || !tool) { err.textContent = "Pick a module and a tool."; return; }
+      let args = {};
+      if (argsInp.value.trim()) { try { args = JSON.parse(argsInp.value); } catch (e) { err.textContent = "Arguments must be valid JSON."; return; } }
+      if (!args || typeof args !== "object" || Array.isArray(args)) { err.textContent = "Arguments must be a JSON object."; return; }
+      addToolCard(module, tool, args, titleInp.value.trim());
+    });
+    if (!mods.length) container.appendChild(el("p", { class: "note", text: "No modules installed yet. Add one in Settings › Modules." }));
+    container.appendChild(el("div", { class: "adder-form" }, [
+      el("label", { class: "field" }, ["module", modSel]),
+      el("label", { class: "field" }, ["tool", toolSel]),
+      el("label", { class: "field full" }, ["arguments", argsInp]),
+      el("label", { class: "field full" }, ["title", titleInp]),
+    ]));
+    container.appendChild(err);
+    container.appendChild(el("div", { class: "row-actions" }, [addB,
+      el("button", { class: "btn ghost small", type: "button", text: "Close", onclick: function () { adderOpen = false; renderHome(); } })]));
+  }
+
+  async function renderHome() {
+    const panel = $("home");
+    stopClock();
+    if (dashCards === null || dashDirty) { dashDirty = false; await loadDash(); }
+    panel.textContent = "";
+    panel.className = "panel active";
+    panel.appendChild(el("div", { class: "home-head" }, [
+      el("h2", { text: "Home" }),
+      el("span", { class: "spacer" }),
+      el("button", { class: "btn ghost small", type: "button", text: adderOpen ? "Close" : "＋ Add card",
+        onclick: function () { adderOpen = !adderOpen; renderHome(); } }),
+    ]));
+    if (adderOpen) {
+      const adder = el("div", { class: "adder" });
+      panel.appendChild(adder);
+      buildAdder(adder);
+    }
+    const grid = el("div", { class: "grid-wrap", id: "dashGrid" });
+    dashCards.forEach(function (entry) { grid.appendChild(buildCard(entry)); });
+    panel.appendChild(grid);
+    if (!dashCards.length) {
+      panel.appendChild(el("p", { class: "muted", text: "No cards yet. Add one, or just ask the assistant to show you something." }));
+    }
+  }
+
+  function renderClock(body) {
+    const big = el("div", { class: "big" });
+    const date = el("div", { class: "muted" });
+    body.appendChild(big); body.appendChild(date);
+    const tick = function () {
+      const now = new Date();
+      big.textContent = now.toLocaleTimeString();
+      date.textContent = now.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
+    };
+    tick();
+    clockTimer = setInterval(tick, 1000);
+  }
+  function renderQuickAsk(body) {
+    const box = el("input", { type: "text", placeholder: "Ask the assistant…" });
+    const btn = el("button", { class: "btn primary", type: "button", text: "Ask" });
+    const go = function () {
+      const text = box.value.trim();
+      if (!text) return;
+      box.value = "";
+      selectTab("thread");
+      send(text);
+    };
+    btn.addEventListener("click", go);
+    box.addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); go(); } });
+    body.appendChild(el("div", { class: "quickask" }, [box, btn]));
+  }
+  async function renderPlacesWidget(body) {
+    const ul = el("ul"); body.appendChild(ul);
+    const r = await api("GET", "/api/locations");
+    if (reauthed(r)) return;
+    const places = (r.ok && r.data.locations) || [];
+    if (!places.length) { ul.appendChild(el("li", { class: "muted", text: "No places saved." })); return; }
+    places.forEach(function (p) {
+      const where = (p.latitude != null) ? (p.latitude + ", " + p.longitude) : (p.address || "");
+      ul.appendChild(el("li", null, [twoLine(p.label || p.name, where)]));
+    });
+  }
+  async function renderRoutinesWidget(body) {
+    const ul = el("ul"); body.appendChild(ul);
+    const r = await api("GET", "/api/schedules");
+    if (reauthed(r)) return;
+    const rows = ((r.ok && r.data.schedules) || []).filter(function (s) { return s.enabled; });
+    if (!rows.length) { ul.appendChild(el("li", { class: "muted", text: "No routines." })); return; }
+    rows.slice(0, 6).forEach(function (s) {
+      const steps = (s.steps || []).map(function (st) { return st.module + "." + st.tool; }).join(", ");
+      ul.appendChild(el("li", null, [twoLine(s.cron, steps)]));
+    });
+  }
+  async function renderNotesWidget(body) {
+    const ul = el("ul"); body.appendChild(ul);
+    const r = await api("GET", "/api/settings");
+    if (reauthed(r)) return;
+    const memory = (r.ok && r.data.memory) || {};
+    const keys = Object.keys(memory);
+    if (!keys.length) { ul.appendChild(el("li", { class: "muted", text: "Nothing remembered yet." })); return; }
+    keys.forEach(function (k) { ul.appendChild(el("li", null, [twoLine(k, JSON.stringify(memory[k]))])); });
+  }
+
+  // ======================================================================
+  //  SETTINGS (one tab: places, schedules, modules, preferences, appearance)
+  // ======================================================================
+  let settingsSection = "places";
+  const SECTIONS = [
+    ["places", "Places", "📍"],
+    ["schedules", "Schedules", "🔁"],
+    ["modules", "Modules", "🧩"],
+    ["prefs", "Preferences", "⚙️"],
+    ["appearance", "Appearance", "🎨"],
+  ];
+  function renderSettings() {
+    const panel = $("settings");
+    panel.textContent = "";
+    const nav = el("div", { class: "subnav" });
+    SECTIONS.forEach(function (s) {
+      nav.appendChild(el("button", { class: "subtab" + (settingsSection === s[0] ? " active" : ""), type: "button",
+        text: s[2] + " " + s[1], onclick: function () { settingsSection = s[0]; renderSettings(); } }));
+    });
+    panel.appendChild(nav);
+    const body = el("div", { class: "settings-body" });
+    panel.appendChild(body);
+    ({ places: renderPlaces, schedules: renderSchedules, modules: renderModules, prefs: renderPreferences, appearance: renderAppearance }[settingsSection] || renderPlaces)(body);
+  }
+
+  async function renderPlaces(root) {
+    root.appendChild(el("h2", { text: "Saved places" }));
+    root.appendChild(el("p", { class: "sub", text: "Home, work, and anywhere the assistant should know by name." }));
     const list = el("ul", { class: "items" });
     const r = await api("GET", "/api/locations");
     if (reauthed(r)) return;
@@ -498,14 +1024,9 @@
       if (loc.latitude != null && loc.longitude != null) bits.push(loc.latitude + ", " + loc.longitude);
       if (loc.address) bits.push(loc.address);
       const del = el("button", { class: "btn small danger", type: "button", text: "Delete" });
-      del.addEventListener("click", async function () {
-        await api("DELETE", "/api/locations/" + encodeURIComponent(loc.name));
-        renderLocations();
-      });
+      del.addEventListener("click", async function () { await api("DELETE", "/api/locations/" + encodeURIComponent(loc.name)); renderSettings(); });
       list.appendChild(el("li", null, [
-        el("span", { class: "grow" }, [
-          el("strong", { text: loc.label || loc.name }), el("span", { class: "meta", text: "  " + (bits.join("  ·  ")) }),
-        ]),
+        el("span", { class: "grow" }, [el("strong", { text: loc.label || loc.name }), el("span", { class: "meta", text: "  " + bits.join("  ·  ") })]),
         del,
       ]));
     });
@@ -527,11 +1048,10 @@
       if (lon.value !== "") body.longitude = Number(lon.value);
       const res = await api("PUT", "/api/locations/" + encodeURIComponent(n), body);
       if (!res.ok) { err.textContent = "Could not save (check the coordinates)."; return; }
-      renderLocations();
+      renderSettings();
     });
-
-    panel.appendChild(el("div", { class: "card" }, [list]));
-    panel.appendChild(el("div", { class: "card" }, [
+    root.appendChild(el("div", { class: "card" }, [list]));
+    root.appendChild(el("div", { class: "card" }, [
       el("div", { class: "grid" }, [
         el("label", { class: "field" }, ["name", name]),
         el("label", { class: "field" }, ["label", label]),
@@ -544,71 +1064,9 @@
     ]));
   }
 
-  async function renderSettings() {
-    const panel = $("settings");
-    panel.textContent = "";
-    panel.appendChild(el("h2", { text: "Preferences" }));
-    panel.appendChild(el("p", { class: "sub", text: "Simple key/value settings, e.g. units = metric, language = en." }));
-
-    const r = await api("GET", "/api/settings");
-    if (reauthed(r)) return;
-    const prefs = r.data.settings || {};
-    const memory = r.data.memory || {};
-
-    const list = el("ul", { class: "items" });
-    // ui: keys hold interface state (the dashboard layout), not user preferences.
-    const prefKeys = Object.keys(prefs).filter(function (k) { return k.indexOf("ui:") !== 0; });
-    prefKeys.forEach(function (k) {
-      const del = el("button", { class: "btn small danger", type: "button", text: "Delete" });
-      del.addEventListener("click", async function () { await api("DELETE", "/api/settings/" + encodeURIComponent(k)); renderSettings(); });
-      list.appendChild(el("li", null, [
-        el("span", { class: "grow" }, [el("strong", { text: k }), el("span", { class: "meta", text: "  " + JSON.stringify(prefs[k]) })]),
-        del,
-      ]));
-    });
-    if (!prefKeys.length) list.appendChild(el("li", { class: "note", text: "No preferences set." }));
-
-    const key = el("input", { type: "text", placeholder: "key (e.g. units)" });
-    const value = el("input", { type: "text", placeholder: "value (e.g. metric)" });
-    const err = el("div", { class: "err" });
-    const save = el("button", { class: "btn primary", type: "button", text: "Save preference" });
-    save.addEventListener("click", async function () {
-      err.textContent = "";
-      const k = key.value.trim();
-      if (!k) { err.textContent = "A key is required."; return; }
-      const res = await api("PUT", "/api/settings/" + encodeURIComponent(k), { value: value.value });
-      if (!res.ok) { err.textContent = "Could not save (keys are lowercase letters, digits, . _ : -)."; return; }
-      renderSettings();
-    });
-
-    panel.appendChild(el("div", { class: "card" }, [list]));
-    panel.appendChild(el("div", { class: "card" }, [
-      el("div", { class: "grid" }, [
-        el("label", { class: "field" }, ["key", key]),
-        el("label", { class: "field" }, ["value", value]),
-      ]),
-      err,
-      el("div", { class: "row-actions" }, [save]),
-    ]));
-
-    // What the assistant has been asked to remember, read-only here.
-    const memList = el("ul", { class: "items" });
-    Object.keys(memory).forEach(function (k) {
-      memList.appendChild(el("li", null, [el("span", { class: "grow" }, [el("strong", { text: k }), el("span", { class: "meta", text: "  " + JSON.stringify(memory[k]) })])]));
-    });
-    if (Object.keys(memory).length) {
-      panel.appendChild(el("h2", { text: "The assistant remembers" }));
-      panel.appendChild(el("p", { class: "sub", text: "Facts you asked it to keep. Ask it to forget one to remove it." }));
-      panel.appendChild(el("div", { class: "card" }, [memList]));
-    }
-  }
-
-  async function renderSchedules() {
-    const panel = $("schedules");
-    panel.textContent = "";
-    panel.appendChild(el("h2", { text: "Schedules" }));
-    panel.appendChild(el("p", { class: "sub", text: "Routines that run on a cron schedule. They act unattended, so they can only do what the scheduler is allowed to do." }));
-
+  async function renderSchedules(root) {
+    root.appendChild(el("h2", { text: "Schedules" }));
+    root.appendChild(el("p", { class: "sub", text: "Routines that run on a cron schedule. They act unattended, so they can only do what the scheduler is allowed to do." }));
     const list = el("ul", { class: "items" });
     const r = await api("GET", "/api/schedules");
     if (reauthed(r)) return;
@@ -621,9 +1079,9 @@
       const actions = [];
       if (s.editable) {
         const toggle = el("button", { class: "btn small", type: "button", text: s.enabled ? "Disable" : "Enable" });
-        toggle.addEventListener("click", async function () { await api("POST", "/api/schedules/" + encodeURIComponent(s.id) + "/enabled", { enabled: !s.enabled }); renderSchedules(); });
+        toggle.addEventListener("click", async function () { await api("POST", "/api/schedules/" + encodeURIComponent(s.id) + "/enabled", { enabled: !s.enabled }); renderSettings(); });
         const del = el("button", { class: "btn small danger", type: "button", text: "Delete" });
-        del.addEventListener("click", async function () { await api("DELETE", "/api/schedules/" + encodeURIComponent(s.id)); renderSchedules(); });
+        del.addEventListener("click", async function () { await api("DELETE", "/api/schedules/" + encodeURIComponent(s.id)); renderSettings(); });
         actions.push(toggle, del);
       } else {
         actions.push(el("span", { class: "meta", text: "from config" }));
@@ -635,16 +1093,14 @@
     const cron = el("input", { type: "text", placeholder: "cron, e.g. 30 6 * * 1-5" });
     const module = el("input", { type: "text", placeholder: "module (e.g. time)" });
     const tool = el("input", { type: "text", placeholder: "tool (e.g. speak_current_time)" });
-    const argsBox = el("textarea", { placeholder: '{ } arguments as JSON (optional)' });
+    const argsBox = el("textarea", { placeholder: "{ } arguments as JSON (optional)" });
     const desc = el("input", { type: "text", placeholder: "description (optional)" });
     const err = el("div", { class: "err" });
     const save = el("button", { class: "btn primary", type: "button", text: "Create schedule" });
     save.addEventListener("click", async function () {
       err.textContent = "";
       let args = {};
-      if (argsBox.value.trim()) {
-        try { args = JSON.parse(argsBox.value); } catch (e) { err.textContent = "Arguments must be valid JSON."; return; }
-      }
+      if (argsBox.value.trim()) { try { args = JSON.parse(argsBox.value); } catch (e) { err.textContent = "Arguments must be valid JSON."; return; } }
       if (!cron.value.trim() || !module.value.trim() || !tool.value.trim()) { err.textContent = "cron, module and tool are required."; return; }
       const res = await api("POST", "/api/schedules", {
         cron: cron.value.trim(),
@@ -652,12 +1108,10 @@
         description: desc.value.trim() || null,
       });
       if (!res.ok) { err.textContent = "Could not create: " + (res.data.detail || res.data.error || res.status); return; }
-      cron.value = module.value = tool.value = argsBox.value = desc.value = "";
-      renderSchedules();
+      renderSettings();
     });
-
-    panel.appendChild(el("div", { class: "card" }, [list]));
-    panel.appendChild(el("div", { class: "card" }, [
+    root.appendChild(el("div", { class: "card" }, [list]));
+    root.appendChild(el("div", { class: "card" }, [
       el("div", { class: "grid" }, [
         el("label", { class: "field full" }, ["cron expression", cron]),
         el("label", { class: "field" }, ["module", module]),
@@ -670,7 +1124,6 @@
     ]));
   }
 
-  // ---- modules: install, configure, remove ------------------------------
   async function doInstall(body, errBox, btn) {
     errBox.textContent = "";
     if (body.source !== undefined && !body.source) { errBox.textContent = "Enter a source."; return; }
@@ -678,22 +1131,15 @@
     btn.disabled = true; btn.textContent = "Installing…";
     const r = await api("POST", "/api/modules", body);
     btn.disabled = false; btn.textContent = label;
-    if (!r.ok || !r.data.ok) {
-      errBox.textContent = "Install failed: " + ((r.data && (r.data.detail || r.data.error)) || r.status);
-      return;
-    }
-    renderModules();
+    if (!r.ok || !r.data.ok) { errBox.textContent = "Install failed: " + ((r.data && (r.data.detail || r.data.error)) || r.status); return; }
+    renderSettings();
   }
-
   function moduleCard(m) {
     const card = el("div", { class: "card" });
     const rm = el("button", { class: "btn small danger", type: "button", text: "Remove" });
-    rm.addEventListener("click", async function () {
-      rm.disabled = true;
-      await api("DELETE", "/api/modules/" + encodeURIComponent(m.name));
-      renderModules();
-    });
-    card.appendChild(el("div", { class: "home-head" }, [
+    rm.addEventListener("click", async function () { rm.disabled = true; await api("DELETE", "/api/modules/" + encodeURIComponent(m.name)); renderSettings(); });
+    card.appendChild(el("div", { class: "modhead" }, [
+      el("span", { class: "emoji", text: EMOJI[m.name] || EMOJI._default }),
       el("strong", { text: m.name }),
       el("span", { class: "badge " + (m.state || ""), text: m.state || "" }),
       el("span", { class: "spacer" }),
@@ -707,7 +1153,6 @@
     if (m.has_policy_rule === false) {
       card.appendChild(el("p", { class: "note", text: "The assistant needs a policy rule for these tools in vahub.yaml before it can use them. A dashboard card can read them now." }));
     }
-
     const cfg = m.config || { required: [], optional: [], set: [] };
     const setKeys = cfg.set || [];
     const allKeys = (cfg.required || []).concat(cfg.optional || []);
@@ -725,50 +1170,36 @@
           if (!inp.value) { err.textContent = "Enter a value."; return; }
           const res = await api("PUT", "/api/modules/" + encodeURIComponent(m.name) + "/config/" + encodeURIComponent(key), { value: inp.value });
           if (!res.ok || !res.data.ok) { err.textContent = "Could not save: " + ((res.data && (res.data.detail || res.data.error)) || res.status); return; }
-          renderModules();
+          renderSettings();
         });
-        const row = el("div", { class: "cfgrow" }, [
-          el("span", { class: "key" + (isReq ? " req" : ""), text: key }),
-          inp, save,
-        ]);
+        const row = el("div", { class: "cfgrow" }, [el("span", { class: "key" + (isReq ? " req" : ""), text: key }), inp, save]);
         if (isSet) {
           const clear = el("button", { class: "btn small danger", type: "button", text: "Clear" });
-          clear.addEventListener("click", async function () {
-            await api("DELETE", "/api/modules/" + encodeURIComponent(m.name) + "/config/" + encodeURIComponent(key));
-            renderModules();
-          });
+          clear.addEventListener("click", async function () { await api("DELETE", "/api/modules/" + encodeURIComponent(m.name) + "/config/" + encodeURIComponent(key)); renderSettings(); });
           row.appendChild(clear);
         }
         card.appendChild(row);
         card.appendChild(err);
       });
     }
-    if (m.missing_config && m.missing_config.length) {
-      card.appendChild(el("p", { class: "err", text: "Needs: " + m.missing_config.join(", ") }));
-    }
+    if (m.missing_config && m.missing_config.length) card.appendChild(el("p", { class: "err", text: "Needs: " + m.missing_config.join(", ") }));
     return card;
   }
-
-  async function renderModules() {
-    const panel = $("modules");
-    panel.textContent = "";
-    panel.appendChild(el("h2", { text: "Modules" }));
-    panel.appendChild(el("p", { class: "sub", text: "Install a module, give it the settings it needs, and remove it. Installing does not grant permission: a tool stays denied until you add a policy rule for it in vahub.yaml on the host." }));
-
+  async function renderModules(root) {
+    root.appendChild(el("h2", { text: "Modules" }));
+    root.appendChild(el("p", { class: "sub", text: "Install a module, give it the settings it needs, and remove it. Installing does not grant permission: a tool stays denied until you add a policy rule for it in vahub.yaml on the host." }));
     const r = await api("GET", "/api/modules");
     if (reauthed(r)) return;
     const mods = (r.ok && r.data.modules) || [];
-    if (!mods.length) panel.appendChild(el("p", { class: "note", text: "No modules installed yet." }));
-    mods.forEach(function (m) { panel.appendChild(moduleCard(m)); });
+    if (!mods.length) root.appendChild(el("p", { class: "note", text: "No modules installed yet." }));
+    mods.forEach(function (m) { root.appendChild(moduleCard(m)); });
 
-    // Add-a-module card. The registry list loads after, so a slow index does not
-    // hold up the installed list.
     const avList = el("div");
     const src = el("input", { type: "text", placeholder: "git+https://…@tag#subdir=…, pypi:…, or ./path" });
     const srcErr = el("div", { class: "err" });
     const srcBtn = el("button", { class: "btn", type: "button", text: "Install from source" });
     srcBtn.addEventListener("click", function () { doInstall({ source: src.value.trim() }, srcErr, srcBtn); });
-    panel.appendChild(el("div", { class: "card" }, [
+    root.appendChild(el("div", { class: "card" }, [
       el("h2", { text: "Add a module" }),
       el("p", { class: "sub", text: "From the registry:" }),
       avList,
@@ -796,203 +1227,93 @@
     avList.appendChild(ul);
   }
 
-  // ---- home dashboard: a grid of cards the user arranges ---------------
-  let currentUser = null;
-  let dashLayout = null;     // ordered list of widget keys; null until loaded
-  let editing = false;
-  let clockTimer = null;
-
-  // A dashboard card backed by a module's read-only `summary` tool, called
-  // through the owner's read-tool endpoint. Tiles are counts; each recent row is
-  // built by `line`. The module and the model produced the strings, so they are
-  // inserted as text like everything else.
-  function serviceWidget(module, tiles, line) {
-    return async function (card) {
-      const body = el("div", null, [el("div", { class: "muted", text: "Loading…" })]);
-      card.appendChild(body);
-      const r = await api("POST", "/api/tools/" + module + "/summary", { args: {} });
-      body.textContent = "";
-      if (!r.ok || !r.data.ok) {
-        const why = (r.data && r.data.error) || "";
-        const msg = why === "unknown_module" ? "Not installed. Add it in the Modules tab."
-          : (why === "module_not_ready" || why === "not_readonly") ? "Set it up in the Modules tab."
-          : "Unavailable right now.";
-        body.appendChild(el("div", { class: "muted", text: msg }));
-        return;
-      }
-      const p = r.data.result || {};
-      if (p.configured === false) { body.appendChild(el("div", { class: "muted", text: "Add its token in the Modules tab." })); return; }
-      if (p.error) { body.appendChild(el("div", { class: "muted", text: String(p.error) })); return; }
-      const row = el("div", { class: "tiles" });
-      tiles.forEach(function (t) {
-        const n = p[t.key];
-        row.appendChild(el("div", { class: "tile" }, [
-          el("span", { class: "n", text: (n == null ? "–" : String(n)) }),
-          el("span", { class: "l", text: t.label }),
-        ]));
-      });
-      body.appendChild(row);
-      const recent = p.recent || [];
-      if (recent.length) {
-        const ul = el("ul");
-        recent.slice(0, 5).forEach(function (item) { ul.appendChild(el("li", null, [line(item)])); });
-        body.appendChild(ul);
-      }
-    };
-  }
-  function twoLine(primary, secondary) {
-    return el("span", null, [
-      el("strong", { text: primary || "" }),
-      el("span", { class: "muted", text: secondary ? "  " + secondary : "" }),
-    ]);
-  }
-
-  const WIDGETS = {
-    clock:    { title: "Clock", render: renderClock },
-    quickask: { title: "Quick ask", wide: true, render: renderQuickAsk },
-    places:   { title: "Saved places", render: renderPlacesWidget },
-    routines: { title: "Upcoming routines", render: renderRoutinesWidget },
-    notes:    { title: "Assistant remembers", render: renderNotesWidget },
-    github:   { title: "GitHub", render: serviceWidget("github",
-      [{ key: "notifications", label: "Inbox" }, { key: "review_requests", label: "Reviews" }, { key: "assigned_issues", label: "Issues" }],
-      function (it) { return twoLine(it.title, it.repo); }) },
-    gitlab:   { title: "GitLab", render: serviceWidget("gitlab",
-      [{ key: "todos", label: "To-dos" }, { key: "assigned_merge_requests", label: "MRs" }, { key: "assigned_issues", label: "Issues" }],
-      function (it) { return twoLine(it.title, it.project); }) },
-    email:    { title: "Email", render: serviceWidget("email",
-      [{ key: "unread", label: "Unread" }, { key: "total", label: "Total" }],
-      function (it) { return twoLine(it.from, it.subject); }) },
-  };
-  const DEFAULT_LAYOUT = ["clock", "quickask", "places", "routines"];
-
-  function layoutKey() { return "ui:layout:" + (currentUser || "_"); }
-  function stopClock() { if (clockTimer) { clearInterval(clockTimer); clockTimer = null; } }
-
-  async function loadLayout() {
+  async function renderPreferences(root) {
+    root.appendChild(el("h2", { text: "Preferences" }));
+    root.appendChild(el("p", { class: "sub", text: "Simple key/value settings, e.g. units = metric, language = en." }));
     const r = await api("GET", "/api/settings");
-    const all = (r.ok && r.data) ? (r.data.settings || {}) : {};
-    const saved = all[layoutKey()];
-    dashLayout = Array.isArray(saved) ? saved.filter(function (k) { return WIDGETS[k]; }) : null;
-    if (!dashLayout || !dashLayout.length) dashLayout = DEFAULT_LAYOUT.slice();
-  }
-  async function saveLayout() {
-    await api("PUT", "/api/settings/" + encodeURIComponent(layoutKey()), { value: dashLayout });
-  }
-  function moveWidget(i, delta) {
-    const j = i + delta;
-    if (j < 0 || j >= dashLayout.length) return;
-    const t = dashLayout[i]; dashLayout[i] = dashLayout[j]; dashLayout[j] = t;
-    saveLayout(); renderHome();
-  }
+    if (reauthed(r)) return;
+    const prefs = r.data.settings || {};
+    const memory = r.data.memory || {};
+    const list = el("ul", { class: "items" });
+    const prefKeys = Object.keys(prefs).filter(function (k) { return k.indexOf("ui:") !== 0; });
+    prefKeys.forEach(function (k) {
+      const del = el("button", { class: "btn small danger", type: "button", text: "Delete" });
+      del.addEventListener("click", async function () { await api("DELETE", "/api/settings/" + encodeURIComponent(k)); renderSettings(); });
+      list.appendChild(el("li", null, [
+        el("span", { class: "grow" }, [el("strong", { text: k }), el("span", { class: "meta", text: "  " + JSON.stringify(prefs[k]) })]),
+        del,
+      ]));
+    });
+    if (!prefKeys.length) list.appendChild(el("li", { class: "note", text: "No preferences set." }));
 
-  async function renderHome() {
-    const panel = $("home");
-    stopClock();
-    if (dashLayout === null) await loadLayout();
-    panel.className = "panel active home" + (editing ? " editing" : "");
-    panel.textContent = "";
-    panel.appendChild(el("div", { class: "home-head" }, [
-      el("h2", { text: "Home" }),
-      el("span", { class: "spacer" }),
-      el("button", { class: "btn small", type: "button", text: editing ? "Done" : "Customize",
-        onclick: function () { editing = !editing; renderHome(); } }),
+    const key = el("input", { type: "text", placeholder: "key (e.g. units)" });
+    const value = el("input", { type: "text", placeholder: "value (e.g. metric)" });
+    const err = el("div", { class: "err" });
+    const save = el("button", { class: "btn primary", type: "button", text: "Save preference" });
+    save.addEventListener("click", async function () {
+      err.textContent = "";
+      const k = key.value.trim();
+      if (!k) { err.textContent = "A key is required."; return; }
+      const res = await api("PUT", "/api/settings/" + encodeURIComponent(k), { value: value.value });
+      if (!res.ok) { err.textContent = "Could not save (keys are lowercase letters, digits, . _ : -)."; return; }
+      renderSettings();
+    });
+    root.appendChild(el("div", { class: "card" }, [list]));
+    root.appendChild(el("div", { class: "card" }, [
+      el("div", { class: "grid" }, [el("label", { class: "field" }, ["key", key]), el("label", { class: "field" }, ["value", value])]),
+      err,
+      el("div", { class: "row-actions" }, [save]),
     ]));
 
-    const grid = el("div", { class: "grid-wrap" });
-    dashLayout.forEach(function (key, i) {
-      const def = WIDGETS[key];
-      if (!def) return;
-      const card = el("div", { class: "widget" + (def.wide ? " wide" : "") });
-      card.appendChild(el("h3", { text: def.title }));
-      def.render(card);
-      if (editing) {
-        card.appendChild(el("div", { class: "widget-edit" }, [
-          el("button", { class: "btn small", type: "button", text: "↑", onclick: function () { moveWidget(i, -1); } }),
-          el("button", { class: "btn small", type: "button", text: "↓", onclick: function () { moveWidget(i, 1); } }),
-          el("button", { class: "btn small danger", type: "button", text: "Remove",
-            onclick: function () { dashLayout.splice(i, 1); saveLayout(); renderHome(); } }),
-        ]));
-      }
-      grid.appendChild(card);
+    const memList = el("ul", { class: "items" });
+    Object.keys(memory).forEach(function (k) {
+      memList.appendChild(el("li", null, [el("span", { class: "grow" }, [el("strong", { text: k }), el("span", { class: "meta", text: "  " + JSON.stringify(memory[k]) })])]));
     });
-    panel.appendChild(grid);
-
-    if (editing) {
-      const picker = el("div", { class: "picker" });
-      Object.keys(WIDGETS).forEach(function (key) {
-        if (dashLayout.indexOf(key) !== -1) return;
-        picker.appendChild(el("button", { class: "btn small", type: "button", text: "+ " + WIDGETS[key].title,
-          onclick: function () { dashLayout.push(key); saveLayout(); renderHome(); } }));
-      });
-      if (picker.children.length) {
-        panel.appendChild(el("p", { class: "muted", text: "Add a widget:" }));
-        panel.appendChild(picker);
-      }
+    if (Object.keys(memory).length) {
+      root.appendChild(el("h2", { text: "The assistant remembers" }));
+      root.appendChild(el("p", { class: "sub", text: "Facts you asked it to keep. Ask it to forget one to remove it." }));
+      root.appendChild(el("div", { class: "card" }, [memList]));
     }
   }
 
-  function renderClock(card) {
-    const big = el("div", { class: "big" });
-    const date = el("div", { class: "muted" });
-    card.appendChild(big); card.appendChild(date);
-    const tick = function () {
-      const now = new Date();
-      big.textContent = now.toLocaleTimeString();
-      date.textContent = now.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
-    };
-    tick();
-    clockTimer = setInterval(tick, 1000);
-  }
-  function renderQuickAsk(card) {
-    const box = el("input", { type: "text", placeholder: "Ask the assistant..." });
-    const btn = el("button", { class: "btn primary", type: "button", text: "Ask" });
-    const go = function () {
-      const text = box.value.trim();
-      if (!text) return;
-      box.value = "";
-      selectTab("thread");
-      send(text);
-    };
-    btn.addEventListener("click", go);
-    box.addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); go(); } });
-    card.appendChild(el("div", { class: "quickask" }, [box, btn]));
-  }
-  async function renderPlacesWidget(card) {
-    const ul = el("ul"); card.appendChild(ul);
-    const r = await api("GET", "/api/locations");
-    if (reauthed(r)) return;
-    const places = (r.ok && r.data.locations) || [];
-    if (!places.length) { ul.appendChild(el("li", { class: "muted", text: "No places saved." })); return; }
-    places.forEach(function (p) {
-      const where = (p.latitude != null) ? (p.latitude + ", " + p.longitude) : (p.address || "");
-      ul.appendChild(el("li", null, [el("strong", { text: p.label || p.name }), el("span", { class: "muted", text: "  " + where })]));
+  async function renderAppearance(root) {
+    root.appendChild(el("h2", { text: "Appearance" }));
+    root.appendChild(el("p", { class: "sub", text: "Pick an accent colour and a theme. Your choice is saved on the hub." }));
+
+    const swatches = el("div", { class: "swatches" });
+    Object.keys(ACCENTS).forEach(function (name) {
+      const sw = el("button", { class: "swatch" + (currentAccent === name ? " active" : ""), type: "button",
+        title: name, "aria-label": name });
+      sw.style.setProperty("background", ACCENTS[name]);   // CSSOM write, not a style attribute
+      sw.addEventListener("click", async function () {
+        applyAccent(name);
+        await api("PUT", "/api/settings/" + encodeURIComponent("ui:accent"), { value: name });
+        renderSettings();
+      });
+      swatches.appendChild(sw);
     });
-  }
-  async function renderRoutinesWidget(card) {
-    const ul = el("ul"); card.appendChild(ul);
-    const r = await api("GET", "/api/schedules");
-    if (reauthed(r)) return;
-    const rows = ((r.ok && r.data.schedules) || []).filter(function (s) { return s.enabled; });
-    if (!rows.length) { ul.appendChild(el("li", { class: "muted", text: "No routines." })); return; }
-    rows.slice(0, 6).forEach(function (s) {
-      const steps = (s.steps || []).map(function (st) { return st.module + "." + st.tool; }).join(", ");
-      ul.appendChild(el("li", null, [el("strong", { text: s.cron }), el("span", { class: "muted", text: "  " + steps })]));
+
+    const seg = el("div", { class: "segmented" });
+    [["auto", "Auto"], ["light", "Light"], ["dark", "Dark"]].forEach(function (t) {
+      const b = el("button", { class: (currentTheme === t[0] ? "active" : ""), type: "button", text: t[1] });
+      b.addEventListener("click", async function () {
+        applyTheme(t[0]);
+        await api("PUT", "/api/settings/" + encodeURIComponent("ui:theme"), { value: t[0] });
+        renderSettings();
+      });
+      seg.appendChild(b);
     });
-  }
-  async function renderNotesWidget(card) {
-    const ul = el("ul"); card.appendChild(ul);
-    const r = await api("GET", "/api/settings");
-    if (reauthed(r)) return;
-    const memory = (r.ok && r.data.memory) || {};
-    const keys = Object.keys(memory);
-    if (!keys.length) { ul.appendChild(el("li", { class: "muted", text: "Nothing remembered yet." })); return; }
-    keys.forEach(function (k) {
-      ul.appendChild(el("li", null, [el("strong", { text: k }), el("span", { class: "muted", text: "  " + JSON.stringify(memory[k]) })]));
-    });
+
+    root.appendChild(el("div", { class: "card" }, [
+      el("div", { class: "field-label", text: "Accent" }),
+      swatches,
+      el("div", { class: "field-label", text: "Theme" }),
+      seg,
+    ]));
   }
 
   // ---- tabs -------------------------------------------------------------
-  const renderers = { home: renderHome, locations: renderLocations, settings: renderSettings, schedules: renderSchedules, modules: renderModules };
+  const renderers = { home: renderHome, settings: renderSettings };
   function selectTab(name) {
     document.querySelectorAll("nav button").forEach(function (b) { b.classList.toggle("active", b.dataset.tab === name); });
     document.querySelectorAll("main .panel").forEach(function (p) { p.classList.toggle("active", p.id === name); });
@@ -1010,24 +1331,16 @@
   function showApp(me) {
     signedOut = false;
     currentUser = (me && me.username) || null;
-    dashLayout = null;   // reload this user's dashboard layout
-    editing = false;
+    dashCards = null; adderOpen = false; settingsSection = "places";
     gate.classList.remove("active");
     $("topbar").hidden = false;
     if (me && me.username) { $("who").textContent = me.username; $("logout").hidden = false; }
     selectTab("home");
     startAssistant();
-    connect();   // fresh socket, so a re-login reconnects instead of relying on the old loop
+    connect();
   }
-  function showGate() {
-    $("topbar").hidden = true;
-    $("composerBar").hidden = true;
-    gate.classList.add("active");
-  }
+  function showGate() { $("topbar").hidden = true; $("composerBar").hidden = true; gate.classList.add("active"); }
   function dropToLogin() {
-    // Session expired or a route returned 401 mid-use: show the login form, not
-    // an empty box, and stop the socket from retrying unauthenticated. Idempotent
-    // so several concurrent 401s (e.g. three dashboard widgets) do it once.
     if (signedOut) return;
     signedOut = true;
     if (socket) { try { socket.close(); } catch (e) { /* gone */ } socket = null; }
@@ -1064,7 +1377,6 @@
     gateBody.appendChild(form);
     user.focus();
   }
-
   function renderLogin(message) {
     $("gateTitle").textContent = "Sign in";
     gateBody.textContent = "";
@@ -1101,8 +1413,6 @@
 
   async function boot() {
     const r = await api("GET", "/api/me");
-    // An errored /api/me must not silently load the app (fail-open) or leave a
-    // blank page: fall back to the login screen.
     if (!r.ok) { dropToLogin(); return; }
     const me = r.data || {};
     if (me.auth === false || me.authenticated) { showApp(me); return; }
@@ -1110,6 +1420,7 @@
     showGate();
   }
 
+  applyAccent(DEFAULT_ACCENT);
   boot();
 })();
 </script>

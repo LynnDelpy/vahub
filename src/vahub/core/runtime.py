@@ -106,7 +106,7 @@ class Runtime:
         and dispatch in process through the same gate as any other module."""
         from .builtins import CORE_MODULE, build_core_module
 
-        module = build_core_module(self.store, self.scheduler)
+        module = build_core_module(self.store, self.scheduler, self.supervisor)
         self.supervisor.modules[CORE_MODULE] = module
         metrics.set_module_state(CORE_MODULE, module.state.value)
 

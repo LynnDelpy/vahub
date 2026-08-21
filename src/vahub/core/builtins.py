@@ -190,7 +190,7 @@ TOOL_DEFS: list[tuple[str, str, str, dict[str, Any]]] = [
         "write",
         "Pin a card to the home dashboard that shows the live result of a module's read-only tool. "
         'For example module "transit" tool "next_departures" with args {"station": "Zurich HB"} pins a '
-        "departures board; module \"weather\" tool \"forecast\" pins the weather. Pick a read tool from "
+        'departures board; module "weather" tool "forecast" pins the weather. Pick a read tool from '
         "the module catalog and give the arguments it needs. Give a short human title when you can.",
         _obj(
             {

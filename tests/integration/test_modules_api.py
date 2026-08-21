@@ -74,7 +74,10 @@ async def test_list_modules_reports_state_tools_and_config(client) -> None:
     mods = (await client.get("/api/modules")).json()["modules"]
     fake = next(m for m in mods if m["name"] == "fake")
     assert fake["state"] == "ready"
-    assert {"name": "echo", "class": "read"} in fake["tools"]
+    echo = next(t for t in fake["tools"] if t["name"] == "echo")
+    assert echo["class"] == "read"
+    # The UI builds real form fields from the live schema, so it is passed through.
+    assert echo["schema"] is None or isinstance(echo["schema"], dict)
     assert "FAKE_NAME" in fake["config"]["optional"]
     assert fake["config"]["set"] == []  # nothing configured through the UI yet
 

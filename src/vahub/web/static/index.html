@@ -215,6 +215,55 @@
   .segmented button { font: inherit; font-size: .86rem; padding: .35rem .8rem; border-radius: 999px; border: none; background: transparent; color: var(--muted); cursor: pointer; }
   .segmented button.active { background: var(--raised); color: var(--fg); box-shadow: var(--shadow-sm); }
 
+  /* ---- settings rows: a label, an explanation, and one control ---- */
+  .setrow { display: flex; align-items: center; gap: 1rem; padding: .85rem 0; border-top: 1px solid var(--line-soft); }
+  .setrow:first-child { border-top: none; }
+  .setrow .text { flex: 1; min-width: 0; }
+  .setrow .text .name { font-weight: 600; }
+  .setrow .text .why { color: var(--muted); font-size: .85rem; }
+
+  /* an accessible switch built from a checkbox, so it is keyboard operable */
+  .switch { position: relative; width: 3rem; height: 1.75rem; flex: none; }
+  .switch input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; width: 100%; height: 100%; }
+  .switch .track { position: absolute; inset: 0; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--line); transition: background .18s ease, border-color .18s ease; pointer-events: none; }
+  .switch .knob { position: absolute; top: 50%; left: .22rem; width: 1.3rem; height: 1.3rem; margin-top: -.65rem; border-radius: 50%; background: var(--raised); box-shadow: var(--shadow-sm); transition: transform .18s ease; pointer-events: none; }
+  .switch input:checked ~ .track { background: var(--accent); border-color: transparent; }
+  .switch input:checked ~ .knob { transform: translateX(1.24rem); }
+  .switch input:focus-visible ~ .track { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* ---- friendly empty states: one line and a way to fix it ---- */
+  .blank { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; color: var(--muted); font-size: .9rem; padding: .2rem 0; }
+  .blank .btn { margin-left: auto; }
+
+  /* ---- schedule builder ---- */
+  .builder { display: grid; gap: .9rem; }
+  .when-row { display: flex; gap: .6rem; align-items: flex-end; flex-wrap: wrap; }
+  .when-row label.field { flex: 1; min-width: 9rem; }
+  .fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); gap: .6rem; }
+  .fields .hint { font-size: .78rem; color: var(--muted); font-weight: 400; }
+  details.advanced { margin-top: .3rem; }
+  details.advanced summary { cursor: pointer; color: var(--muted); font-size: .86rem; padding: .3rem 0; }
+  .sched { display: flex; align-items: center; gap: .6rem; padding: .7rem 0; border-top: 1px solid var(--line-soft); }
+  .sched:first-child { border-top: none; }
+  .sched .grow { flex: 1; min-width: 0; }
+  .sched .when { font-weight: 600; }
+  .sched .what { color: var(--muted); font-size: .88rem; overflow-wrap: anywhere; }
+
+  /* ---- dragging: a lifted card, a gap where it lands, neighbours sliding ---- */
+  .widget { transition: box-shadow .18s ease; }
+  .widget.lifted {
+    position: fixed; margin: 0; z-index: 50; pointer-events: none; cursor: grabbing;
+    box-shadow: 0 18px 45px rgba(40,25,10,.28), 0 3px 10px rgba(40,25,10,.18);
+    transform: rotate(.6deg) scale(1.02); transition: none; will-change: transform, top, left;
+  }
+  .widget.settling { transition: top .2s cubic-bezier(.2,.9,.3,1), left .2s cubic-bezier(.2,.9,.3,1), transform .2s ease, box-shadow .2s ease; }
+  .drop-slot { border: 2px dashed var(--accent); border-radius: var(--radius); background: var(--accent-weaker); }
+  .grid-wrap.dragging .widget:not(.lifted) { transition: transform .22s cubic-bezier(.2,.9,.3,1); }
+  body.dragging, body.dragging * { user-select: none; -webkit-user-select: none; }
+  @media (prefers-reduced-motion: reduce) {
+    .grid-wrap.dragging .widget:not(.lifted), .widget.settling, .switch .track, .switch .knob { transition: none; }
+  }
+
   /* login / setup overlay */
   #gate { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; background: linear-gradient(160deg, var(--accent-weak), var(--bg) 60%); padding: 1rem; }
   #gate.active { display: flex; }
@@ -563,6 +612,195 @@
   }
 
   // ======================================================================
+  //  SHARED: preferences, small controls, and plain language
+  // ======================================================================
+  // Preferences are only worth offering if they do something, so every one of
+  // these changes the app you are looking at. They live in one setting.
+  const PREF_DEFAULTS = { clock24: true, clockSeconds: false, startPage: "home", readAloud: true, motion: true };
+  let prefs = Object.assign({}, PREF_DEFAULTS);
+
+  function adoptPrefs(value) {
+    prefs = Object.assign({}, PREF_DEFAULTS);
+    if (value && typeof value === "object") {
+      Object.keys(PREF_DEFAULTS).forEach(function (k) {
+        if (typeof value[k] === typeof PREF_DEFAULTS[k]) prefs[k] = value[k];
+      });
+    }
+    readBox.checked = !!prefs.readAloud;
+  }
+  async function savePrefs() { await api("PUT", "/api/settings/" + encodeURIComponent("ui:prefs"), { value: prefs }); }
+  function animate() {
+    if (!prefs.motion) return false;
+    return !(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+  }
+  // Flipping the composer's own toggle is the same choice, so it is remembered.
+  readBox.addEventListener("change", function () { prefs.readAloud = readBox.checked; savePrefs(); });
+
+  // ---- small controls ---------------------------------------------------
+  function switchRow(name, why, checked, onchange) {
+    const box = el("input", { type: "checkbox", "aria-label": name });
+    box.checked = !!checked;
+    box.addEventListener("change", function () { onchange(box.checked); });
+    return el("div", { class: "setrow" }, [
+      el("div", { class: "text" }, [el("div", { class: "name", text: name }), why ? el("div", { class: "why", text: why }) : null]),
+      el("span", { class: "switch" }, [box, el("span", { class: "track" }), el("span", { class: "knob" })]),
+    ]);
+  }
+  function segmentedRow(name, why, options, current, onchange) {
+    const seg = el("div", { class: "segmented" });
+    options.forEach(function (o) {
+      const b = el("button", { class: (current === o[0] ? "active" : ""), type: "button", text: o[1] });
+      b.addEventListener("click", function () { onchange(o[0]); });
+      seg.appendChild(b);
+    });
+    return el("div", { class: "setrow" }, [
+      el("div", { class: "text" }, [el("div", { class: "name", text: name }), why ? el("div", { class: "why", text: why }) : null]),
+      seg,
+    ]);
+  }
+  // An empty list should offer the way out of being empty, not just say it is empty.
+  function blank(parent, text, actionLabel, onclick) {
+    const row = el("div", { class: "blank" }, [el("span", { text: text })]);
+    if (actionLabel) row.appendChild(el("button", { class: "btn small", type: "button", text: actionLabel, onclick: onclick }));
+    parent.appendChild(row);
+  }
+
+  // ---- plain words ------------------------------------------------------
+  const WORDS = {
+    URL: "URL", URLS: "URLs", API: "API", SSL: "SSL", ID: "ID", IMAP: "IMAP", ICS: "Calendar feed",
+    TZ: "Time zone", HA: "Home Assistant", NTFY: "ntfy", MR: "MR", RSS: "RSS", HB: "HB",
+  };
+  function humanizeWords(raw) {
+    const parts = String(raw || "").split(/[_\s]+/).filter(Boolean);
+    const out = [];
+    for (let i = 0; i < parts.length; i++) {
+      const up = parts[i].toUpperCase();
+      if (up === "S" && out.length && /timeout/i.test(out[out.length - 1])) { out.push("(seconds)"); continue; }
+      if (WORDS[up]) { out.push(WORDS[up]); continue; }
+      const lower = parts[i].toLowerCase();
+      out.push(out.length ? lower : lower.charAt(0).toUpperCase() + lower.slice(1));
+    }
+    const text = out.join(" ");
+    return text.charAt(0).toUpperCase() + text.slice(1);
+  }
+  // Apps have names people already know how to spell.
+  const APP_NAMES = {
+    github: "GitHub", gitlab: "GitLab", homeassistant: "Home Assistant", rss: "News feeds",
+    homelab: "Homelab", obsidian: "Obsidian", email: "Email", calendar: "Calendar",
+    transit: "Transit", weather: "Weather", calculator: "Calculator", notify: "Notifications",
+    time: "Time", core: "Assistant",
+  };
+  function appName(name) { return APP_NAMES[name] || humanizeWords(name); }
+  function humanizeKey(moduleName, key) {
+    const prefix = String(moduleName || "").toUpperCase().replace(/-/g, "_") + "_";
+    const trimmed = String(key).indexOf(prefix) === 0 ? String(key).slice(prefix.length) : String(key);
+    return humanizeWords(trimmed);
+  }
+  function firstSentence(text, cap) {
+    // A tool's description is a docstring: its first line is the summary and the
+    // rest documents arguments. Only the summary belongs in a label.
+    const s = String(text || "").trim();
+    if (!s) return "";
+    const line = s.split(/\r?\n/)[0].trim();
+    const dot = line.indexOf(". ");
+    const one = dot > 0 ? line.slice(0, dot + 1) : line;
+    return one.length > (cap || 90) ? one.slice(0, cap || 90).trim() + "…" : one;
+  }
+
+  // ---- fields built from a tool's own schema (never raw JSON) -----------
+  function fieldsFromSchema(schema) {
+    const props = (schema && schema.properties) || {};
+    const required = (schema && schema.required) || [];
+    const wrap = el("div", { class: "fields" });
+    const controls = [];
+    Object.keys(props).forEach(function (key) {
+      const spec = props[key] || {};
+      const isReq = required.indexOf(key) !== -1;
+      let input;
+      if (Array.isArray(spec.enum)) {
+        input = el("select");
+        if (!isReq) input.appendChild(el("option", { value: "", text: "—" }));
+        spec.enum.forEach(function (v) { input.appendChild(el("option", { value: String(v), text: String(v) })); });
+      } else if (spec.type === "boolean") {
+        input = el("input", { type: "checkbox" });
+        if (spec.default) input.checked = true;
+      } else if (spec.type === "number" || spec.type === "integer") {
+        input = el("input", { type: "number", step: spec.type === "integer" ? "1" : "any" });
+        if (spec.default !== undefined) input.value = String(spec.default);
+      } else {
+        input = el("input", { type: "text" });
+        if (spec.default !== undefined) input.value = String(spec.default);
+      }
+      wrap.appendChild(el("label", { class: "field" }, [
+        humanizeWords(key) + (isReq ? " *" : ""),
+        input,
+        spec.description ? el("span", { class: "hint", text: firstSentence(spec.description, 80) }) : null,
+      ]));
+      controls.push({ key: key, input: input, spec: spec, required: isReq });
+    });
+    return {
+      node: wrap,
+      empty: controls.length === 0,
+      missing: function () {
+        return controls.filter(function (c) {
+          return c.required && c.spec.type !== "boolean" && !String(c.input.value || "").trim();
+        }).map(function (c) { return humanizeWords(c.key); });
+      },
+      values: function () {
+        const out = {};
+        controls.forEach(function (c) {
+          if (c.spec.type === "boolean") { out[c.key] = !!c.input.checked; return; }
+          const raw = String(c.input.value || "").trim();
+          if (!raw) return;                       // an untouched optional field is left out
+          out[c.key] = (c.spec.type === "number" || c.spec.type === "integer") ? Number(raw) : raw;
+        });
+        return out;
+      },
+    };
+  }
+
+  // ---- when things run, in words instead of cron -----------------------
+  const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+  const REPEATS = [
+    ["daily", "Every day"], ["weekdays", "Every weekday"], ["weekend", "Every weekend day"],
+    ["weekly", "Once a week"], ["monthly", "Once a month"], ["hourly", "Every hour"],
+  ];
+  function cronFrom(repeat, hhmm, weekday, monthday) {
+    const bits = String(hhmm || "08:00").split(":");
+    const h = String(parseInt(bits[0], 10) || 0);
+    const m = String(parseInt(bits[1], 10) || 0);
+    if (repeat === "hourly") return m + " * * * *";
+    if (repeat === "weekdays") return m + " " + h + " * * 1-5";
+    if (repeat === "weekend") return m + " " + h + " * * 0,6";
+    if (repeat === "weekly") return m + " " + h + " * * " + String(weekday);
+    if (repeat === "monthly") return m + " " + h + " " + String(monthday) + " * *";
+    return m + " " + h + " * * *";
+  }
+  function clockText(h, m) {
+    const hh = parseInt(h, 10), mm = parseInt(m, 10);
+    if (isNaN(hh) || isNaN(mm)) return null;
+    const pad = function (n) { return (n < 10 ? "0" : "") + n; };
+    if (prefs.clock24) return pad(hh) + ":" + pad(mm);
+    const suffix = hh < 12 ? "am" : "pm";
+    const h12 = hh % 12 === 0 ? 12 : hh % 12;
+    return h12 + ":" + pad(mm) + " " + suffix;
+  }
+  function describeCron(cron) {
+    const f = String(cron || "").trim().split(/\s+/);
+    if (f.length !== 5) return String(cron || "");
+    const m = f[0], h = f[1], dom = f[2], mon = f[3], dow = f[4];
+    if (h === "*" && /^\d+$/.test(m)) return "Every hour at " + (m.length < 2 ? "0" + m : m) + " past";
+    const at = clockText(h, m);
+    if (at === null || mon !== "*") return String(cron);      // something unusual: show it as written
+    if (dom === "*" && dow === "1-5") return "Every weekday at " + at;
+    if (dom === "*" && (dow === "0,6" || dow === "6,0")) return "Every weekend day at " + at;
+    if (dom === "*" && /^\d$/.test(dow)) return "Every " + DAYS[Number(dow)] + " at " + at;
+    if (dom === "*" && dow === "*") return "Every day at " + at;
+    if (/^\d+$/.test(dom) && dow === "*") return "Monthly on day " + dom + " at " + at;
+    return String(cron);
+  }
+
+  // ======================================================================
   //  HOME DASHBOARD
   // ======================================================================
   let currentUser = null;
@@ -714,9 +952,10 @@
     const r = await api("GET", "/api/settings");
     if (reauthed(r)) return;
     const settings = (r.ok && r.data && r.data.settings) || {};
-    // apply the owner's appearance while we have the settings in hand
+    // apply the owner's appearance and preferences while we have them in hand
     if (settings["ui:accent"]) applyAccent(settings["ui:accent"]);
     if (settings["ui:theme"]) applyTheme(settings["ui:theme"]);
+    adoptPrefs(settings["ui:prefs"]);
     let cards = settings["ui:dashboard"];
     if (!Array.isArray(cards)) {
       const old = settings["ui:layout:" + (currentUser || "_")];
@@ -773,7 +1012,34 @@
     saveDash(); renderHome();
   }
 
-  // ---- drag to reorder (pointer based, works with mouse and touch) ------
+  // ---- drag to reorder --------------------------------------------------
+  // The card you hold is lifted out of the grid and follows the pointer, a
+  // dashed slot shows where it will land, and the cards it displaces slide out
+  // of the way (measure, move, invert, play). Dragging only starts after a few
+  // pixels of movement, so a tap on the handle is still just a tap.
+  const DRAG_THRESHOLD = 4;
+
+  function slideNeighbours(grid, skip, before) {
+    if (!animate()) return;
+    Array.prototype.forEach.call(grid.children, function (c) {
+      if (c === skip || !before.has(c)) return;
+      const now = c.getBoundingClientRect();
+      const was = before.get(c);
+      const dx = was.left - now.left, dy = was.top - now.top;
+      if (!dx && !dy) return;
+      c.style.transition = "none";
+      c.style.transform = "translate(" + dx + "px," + dy + "px)";
+      requestAnimationFrame(function () {
+        c.style.transition = "";
+        c.style.transform = "";
+      });
+    });
+  }
+  function positions(grid) {
+    const map = new Map();
+    Array.prototype.forEach.call(grid.children, function (c) { map.set(c, c.getBoundingClientRect()); });
+    return map;
+  }
   function nearestCard(grid, exclude, x, y) {
     let best = null, bd = Infinity;
     Array.prototype.forEach.call(grid.children, function (c) {
@@ -792,34 +1058,91 @@
     const next = order.map(function (id) { return byId[id]; }).filter(Boolean);
     if (next.length === dashCards.length) { dashCards = next; saveDash(); }
   }
+
   function attachDrag(handle, card) {
-    handle.addEventListener("pointerdown", function (e) {
-      e.preventDefault();
+    handle.addEventListener("pointerdown", function (down) {
+      if (down.button !== undefined && down.button !== 0) return;
+      // The header holds the remove button; pressing it is a click, not a grab.
+      if (down.target && down.target.closest && down.target.closest(".cardx")) return;
+      down.preventDefault();
       const grid = $("dashGrid");
       if (!grid) return;
-      card.classList.add("dragging");
-      try { handle.setPointerCapture(e.pointerId); } catch (_) { /* ok */ }
+
+      let dragging = false, slot = null, rect = null, dx = 0, dy = 0;
+      const startX = down.clientX, startY = down.clientY;
+      try { handle.setPointerCapture(down.pointerId); } catch (e) { /* fine without capture */ }
+
+      const begin = function () {
+        dragging = true;
+        rect = card.getBoundingClientRect();
+        dx = startX - rect.left;
+        dy = startY - rect.top;
+        // A slot of exactly the card's size keeps the grid from reflowing the
+        // moment the card leaves it.
+        slot = el("div", { class: "drop-slot" });
+        slot.style.setProperty("height", rect.height + "px");
+        if (card.classList.contains("wide")) slot.className = "drop-slot wide";
+        grid.insertBefore(slot, card);
+        card.style.setProperty("width", rect.width + "px");
+        card.style.setProperty("height", rect.height + "px");
+        card.style.setProperty("left", rect.left + "px");
+        card.style.setProperty("top", rect.top + "px");
+        card.classList.add("lifted");
+        grid.classList.add("dragging");
+        document.body.classList.add("dragging");
+      };
+
       const move = function (ev) {
+        if (!dragging) {
+          if (Math.abs(ev.clientX - startX) < DRAG_THRESHOLD && Math.abs(ev.clientY - startY) < DRAG_THRESHOLD) return;
+          begin();
+        }
+        card.style.setProperty("left", (ev.clientX - dx) + "px");
+        card.style.setProperty("top", (ev.clientY - dy) + "px");
         const target = nearestCard(grid, card, ev.clientX, ev.clientY);
-        if (!target) return;
+        if (!target || target === slot) return;
         const r = target.getBoundingClientRect();
         const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
         const sameRow = Math.abs(ev.clientY - cy) < r.height * 0.6;
         const before = sameRow ? (ev.clientX < cx) : (ev.clientY < cy);
-        if (before) grid.insertBefore(card, target);
-        else grid.insertBefore(card, target.nextSibling);
+        const wanted = before ? target : target.nextSibling;
+        if (wanted === slot || (before && slot.nextSibling === target && slot === target.previousSibling)) return;
+        const was = positions(grid);
+        grid.insertBefore(slot, wanted);
+        slideNeighbours(grid, card, was);
       };
-      const up = function () {
-        card.classList.remove("dragging");
+
+      const finish = function () {
         handle.removeEventListener("pointermove", move);
-        handle.removeEventListener("pointerup", up);
-        handle.removeEventListener("pointercancel", up);
-        try { handle.releasePointerCapture(e.pointerId); } catch (_) { /* ok */ }
-        commitOrder(grid);
+        handle.removeEventListener("pointerup", finish);
+        handle.removeEventListener("pointercancel", finish);
+        try { handle.releasePointerCapture(down.pointerId); } catch (e) { /* already released */ }
+        if (!dragging) return;                       // a click, not a drag
+        const landing = slot.getBoundingClientRect();
+        const settle = function () {
+          card.classList.remove("lifted", "settling");
+          ["width", "height", "left", "top", "transform"].forEach(function (prop) { card.style.removeProperty(prop); });
+          grid.insertBefore(card, slot);
+          slot.remove();
+          grid.classList.remove("dragging");
+          document.body.classList.remove("dragging");
+          commitOrder(grid);
+        };
+        if (!animate()) { settle(); return; }
+        // Drop it into the slot rather than snapping there.
+        card.classList.add("settling");
+        card.style.setProperty("left", landing.left + "px");
+        card.style.setProperty("top", landing.top + "px");
+        card.style.setProperty("transform", "none");
+        let done = false;
+        const once = function () { if (done) return; done = true; card.removeEventListener("transitionend", once); settle(); };
+        card.addEventListener("transitionend", once);
+        setTimeout(once, 260);                       // in case the transition never fires
       };
+
       handle.addEventListener("pointermove", move);
-      handle.addEventListener("pointerup", up);
-      handle.addEventListener("pointercancel", up);
+      handle.addEventListener("pointerup", finish);
+      handle.addEventListener("pointercancel", finish);
     });
   }
 
@@ -828,21 +1151,22 @@
     const card = el("div", { class: "widget" + (def && def.wide ? " wide" : "") });
     card.dataset.id = entry.id;
     const title = entry.type === "widget" ? (def ? def.title : entry.widget) : entry.title;
-    const grip = el("button", { class: "grip", type: "button", title: "Drag to reorder", "aria-label": "Drag to reorder", text: "⠿" });
+    const grip = el("span", { class: "grip", title: "Drag to move", "aria-hidden": "true", text: "⠿" });
     const rm = el("button", { class: "cardx", type: "button", title: "Remove card", "aria-label": "Remove card", text: "×",
       onclick: function () { removeCard(entry.id); } });
-    card.appendChild(el("div", { class: "widget-head" }, [
+    const head = el("div", { class: "widget-head" }, [
       el("span", { class: "emoji", text: emojiFor(entry) }),
       el("h3", { text: title || "Card" }),
       el("span", { class: "spacer" }),
       grip, rm,
-    ]));
+    ]);
+    card.appendChild(head);
     const body = el("div", { class: "widget-body" });
     card.appendChild(body);
     if (entry.type === "widget" && def) def.render(body);
     else if (entry.type === "tool") toolCardRender(entry)(body);
     else body.appendChild(el("div", { class: "muted", text: "Unknown card." }));
-    attachDrag(grip, card);
+    attachDrag(head, card);   // the whole title bar drags, not just the grip
     return card;
   }
 
@@ -857,52 +1181,67 @@
       chips.appendChild(el("button", { class: "chip", type: "button", text: (EMOJI[key] || "") + " " + WIDGETS[key].title,
         onclick: function () { addWidget(key); } }));
     });
-    if (!chips.children.length) chips.appendChild(el("span", { class: "muted", text: "All the built-in cards are on your home." }));
-    container.appendChild(el("div", { class: "field-label", text: "Built-in" }));
-    container.appendChild(chips);
+    if (chips.children.length) {
+      container.appendChild(el("div", { class: "field-label", text: "Ready made" }));
+      container.appendChild(chips);
+    }
 
-    container.appendChild(el("div", { class: "field-label", text: "From a module" }));
-    const modSel = el("select");
-    const toolSel = el("select");
-    const argsInp = el("input", { type: "text", placeholder: 'arguments as JSON, e.g. {"station":"Zürich HB"}' });
-    const titleInp = el("input", { type: "text", placeholder: "title (optional)" });
-    const err = el("div", { class: "err" });
-    const addB = el("button", { class: "btn primary small", type: "button", text: "Add module card" });
-    modSel.appendChild(el("option", { value: "", text: "choose a module…" }));
-
-    const r = await api("GET", "/api/modules");
-    const mods = (r.ok && r.data.modules) || [];
-    const readTools = {};
+    container.appendChild(el("div", { class: "field-label", text: "From one of your apps" }));
+    const mods = await loadModules();
+    // Only read-only tools can back a card, so only those are offered.
+    const choices = [];
     mods.forEach(function (m) {
-      const rt = (m.tools || []).filter(function (t) { return t["class"] === "read"; }).map(function (t) { return t.name; });
-      if (!rt.length) return;
-      readTools[m.name] = rt;
-      modSel.appendChild(el("option", { value: m.name, text: m.name }));
+      (m.tools || []).forEach(function (tool) {
+        if (tool["class"] !== "read") return;
+        choices.push({ module: m.name, tool: tool.name, schema: tool.schema, about: tool.description || "",
+          label: (EMOJI[m.name] || EMOJI._default) + " " + appName(m.name) + " · " + humanizeWords(tool.name) });
+      });
     });
-    const fillTools = function () {
-      toolSel.textContent = "";
-      (readTools[modSel.value] || []).forEach(function (tn) { toolSel.appendChild(el("option", { value: tn, text: tn })); });
+    if (!choices.length) {
+      blank(container, "Add an app and its information can live here.", "Browse apps", function () { openSettings("modules"); });
+      container.appendChild(el("div", { class: "row-actions" }, [
+        el("button", { class: "btn ghost small", type: "button", text: "Close", onclick: function () { adderOpen = false; renderHome(); } }),
+      ]));
+      return;
+    }
+
+    const what = el("select");
+    choices.forEach(function (c, i) { what.appendChild(el("option", { value: String(i), text: c.label })); });
+    const about = el("p", { class: "note" });
+    const fieldsBox = el("div");
+    const titleInp = el("input", { type: "text", placeholder: "leave empty and we will name it" });
+    const err = el("div", { class: "err" });
+    let fields = null;
+    const buildFields = function () {
+      fieldsBox.textContent = "";
+      const choice = choices[Number(what.value) || 0];
+      about.textContent = choice ? firstSentence(choice.about, 160) : "";
+      fields = fieldsFromSchema(choice && choice.schema);
+      if (!fields.empty) fieldsBox.appendChild(fields.node);
     };
-    modSel.addEventListener("change", fillTools);
+    what.addEventListener("change", buildFields);
+
+    const addB = el("button", { class: "btn primary small", type: "button", text: "Add to home" });
     addB.addEventListener("click", function () {
       err.textContent = "";
-      const module = modSel.value, tool = toolSel.value;
-      if (!module || !tool) { err.textContent = "Pick a module and a tool."; return; }
-      let args = {};
-      if (argsInp.value.trim()) { try { args = JSON.parse(argsInp.value); } catch (e) { err.textContent = "Arguments must be valid JSON."; return; } }
-      if (!args || typeof args !== "object" || Array.isArray(args)) { err.textContent = "Arguments must be a JSON object."; return; }
-      addToolCard(module, tool, args, titleInp.value.trim());
+      const choice = choices[Number(what.value) || 0];
+      const short = fields ? fields.missing() : [];
+      if (short.length) { err.textContent = "Still needed: " + short.join(", ") + "."; return; }
+      addToolCard(choice.module, choice.tool, fields ? fields.values() : {}, titleInp.value.trim());
     });
-    if (!mods.length) container.appendChild(el("p", { class: "note", text: "No modules installed yet. Add one in Settings › Modules." }));
+
     container.appendChild(el("div", { class: "adder-form" }, [
-      el("label", { class: "field" }, ["module", modSel]),
-      el("label", { class: "field" }, ["tool", toolSel]),
-      el("label", { class: "field full" }, ["arguments", argsInp]),
-      el("label", { class: "field full" }, ["title", titleInp]),
+      el("label", { class: "field full" }, ["Show me", what]),
+    ]));
+    container.appendChild(about);
+    container.appendChild(fieldsBox);
+    container.appendChild(el("div", { class: "adder-form" }, [
+      el("label", { class: "field full" }, ["Card title", titleInp]),
     ]));
     container.appendChild(err);
     container.appendChild(el("div", { class: "row-actions" }, [addB,
       el("button", { class: "btn ghost small", type: "button", text: "Close", onclick: function () { adderOpen = false; renderHome(); } })]));
+    buildFields();
   }
 
   async function renderHome() {
@@ -936,11 +1275,13 @@
     body.appendChild(big); body.appendChild(date);
     const tick = function () {
       const now = new Date();
-      big.textContent = now.toLocaleTimeString();
+      const opts = { hour: "2-digit", minute: "2-digit", hour12: !prefs.clock24 };
+      if (prefs.clockSeconds) opts.second = "2-digit";
+      big.textContent = now.toLocaleTimeString(undefined, opts);
       date.textContent = now.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
     };
     tick();
-    clockTimer = setInterval(tick, 1000);
+    clockTimer = setInterval(tick, prefs.clockSeconds ? 1000 : 15000);
   }
   function renderQuickAsk(body) {
     const box = el("input", { type: "text", placeholder: "Ask the assistant…" });
@@ -961,7 +1302,11 @@
     const r = await api("GET", "/api/locations");
     if (reauthed(r)) return;
     const places = (r.ok && r.data.locations) || [];
-    if (!places.length) { ul.appendChild(el("li", { class: "muted", text: "No places saved." })); return; }
+    if (!places.length) {
+      ul.remove();
+      blank(body, "Add the places you talk about, like home or work.", "Add a place", function () { openSettings("places"); });
+      return;
+    }
     places.forEach(function (p) {
       const where = (p.latitude != null) ? (p.latitude + ", " + p.longitude) : (p.address || "");
       ul.appendChild(el("li", null, [twoLine(p.label || p.name, where)]));
@@ -969,13 +1314,17 @@
   }
   async function renderRoutinesWidget(body) {
     const ul = el("ul"); body.appendChild(ul);
+    await loadModules();          // so a step reads as words, not module.tool
     const r = await api("GET", "/api/schedules");
     if (reauthed(r)) return;
     const rows = ((r.ok && r.data.schedules) || []).filter(function (s) { return s.enabled; });
-    if (!rows.length) { ul.appendChild(el("li", { class: "muted", text: "No routines." })); return; }
+    if (!rows.length) {
+      ul.remove();
+      blank(body, "Nothing runs automatically yet.", "Set one up", function () { openSettings("schedules"); });
+      return;
+    }
     rows.slice(0, 6).forEach(function (s) {
-      const steps = (s.steps || []).map(function (st) { return st.module + "." + st.tool; }).join(", ");
-      ul.appendChild(el("li", null, [twoLine(s.cron, steps)]));
+      ul.appendChild(el("li", null, [twoLine(describeCron(s.cron), describeSteps(s.steps))]));
     });
   }
   async function renderNotesWidget(body) {
@@ -984,7 +1333,11 @@
     if (reauthed(r)) return;
     const memory = (r.ok && r.data.memory) || {};
     const keys = Object.keys(memory);
-    if (!keys.length) { ul.appendChild(el("li", { class: "muted", text: "Nothing remembered yet." })); return; }
+    if (!keys.length) {
+      ul.remove();
+      blank(body, "Tell the assistant something to remember and it appears here.", "Ask it", function () { selectTab("thread"); });
+      return;
+    }
     keys.forEach(function (k) { ul.appendChild(el("li", null, [twoLine(k, JSON.stringify(memory[k]))])); });
   }
 
@@ -992,13 +1345,35 @@
   //  SETTINGS (one tab: places, schedules, modules, preferences, appearance)
   // ======================================================================
   let settingsSection = "places";
+  let moduleCache = null;              // installed modules, for building friendly choices
   const SECTIONS = [
     ["places", "Places", "📍"],
-    ["schedules", "Schedules", "🔁"],
-    ["modules", "Modules", "🧩"],
+    ["schedules", "Automations", "🔁"],
+    ["modules", "Apps", "🧩"],
     ["prefs", "Preferences", "⚙️"],
-    ["appearance", "Appearance", "🎨"],
   ];
+  function openSettings(section) {
+    settingsSection = section || "places";
+    selectTab("settings");
+  }
+  async function loadModules(force) {
+    if (moduleCache && !force) return moduleCache;
+    const r = await api("GET", "/api/modules");
+    if (reauthed(r)) return [];
+    moduleCache = (r.ok && r.data.modules) || [];
+    return moduleCache;
+  }
+  // "transit.next_departures" is not something to show a person. Prefer the
+  // tool's own description, fall back to plain words.
+  function describeSteps(steps) {
+    return (steps || []).map(function (st) {
+      const mod = (moduleCache || []).filter(function (m) { return m.name === st.module; })[0];
+      const tool = mod && (mod.tools || []).filter(function (x) { return x.name === st.tool; })[0];
+      const words = (tool && tool.description) ? firstSentence(tool.description, 70) : humanizeWords(st.tool);
+      const args = Object.keys(st.args || {}).map(function (k) { return String(st.args[k]); }).join(", ");
+      return args ? words + " (" + args + ")" : words;
+    }).join(", ");
+  }
   function renderSettings() {
     const panel = $("settings");
     panel.textContent = "";
@@ -1010,12 +1385,12 @@
     panel.appendChild(nav);
     const body = el("div", { class: "settings-body" });
     panel.appendChild(body);
-    ({ places: renderPlaces, schedules: renderSchedules, modules: renderModules, prefs: renderPreferences, appearance: renderAppearance }[settingsSection] || renderPlaces)(body);
+    ({ places: renderPlaces, schedules: renderSchedules, modules: renderModules, prefs: renderPreferences }[settingsSection] || renderPlaces)(body);
   }
 
   async function renderPlaces(root) {
-    root.appendChild(el("h2", { text: "Saved places" }));
-    root.appendChild(el("p", { class: "sub", text: "Home, work, and anywhere the assistant should know by name." }));
+    root.appendChild(el("h2", { text: "Places" }));
+    root.appendChild(el("p", { class: "sub", text: "Give the places you talk about a name, so you can just say “home”." }));
     const list = el("ul", { class: "items" });
     const r = await api("GET", "/api/locations");
     if (reauthed(r)) return;
@@ -1030,34 +1405,43 @@
         del,
       ]));
     });
-    if (!(r.data.locations || []).length) list.appendChild(el("li", { class: "note", text: "Nothing saved yet." }));
+    const hasPlaces = (r.data.locations || []).length > 0;
 
-    const name = el("input", { type: "text", placeholder: "name (e.g. home)" });
-    const label = el("input", { type: "text", placeholder: "label (optional)" });
+    const name = el("input", { type: "text", placeholder: "home" });
+    const label = el("input", { type: "text", placeholder: "Home" });
     const lat = el("input", { type: "number", step: "any", placeholder: "latitude" });
     const lon = el("input", { type: "number", step: "any", placeholder: "longitude" });
-    const address = el("input", { type: "text", placeholder: "address (optional)" });
+    const address = el("input", { type: "text", placeholder: "Bahnhofstrasse 1, Zürich" });
     const err = el("div", { class: "err" });
     const save = el("button", { class: "btn primary", type: "button", text: "Save place" });
     save.addEventListener("click", async function () {
       err.textContent = "";
       const n = name.value.trim();
-      if (!n) { err.textContent = "A name is required."; return; }
+      if (!n) { err.textContent = "Give it a name first."; return; }
       const body = { label: label.value.trim() || null, address: address.value.trim() || null };
       if (lat.value !== "") body.latitude = Number(lat.value);
       if (lon.value !== "") body.longitude = Number(lon.value);
       const res = await api("PUT", "/api/locations/" + encodeURIComponent(n), body);
-      if (!res.ok) { err.textContent = "Could not save (check the coordinates)."; return; }
+      if (!res.ok) { err.textContent = "Could not save that. If you entered coordinates, check them."; return; }
       renderSettings();
     });
-    root.appendChild(el("div", { class: "card" }, [list]));
+    // An empty list is not worth a card of its own; the form below is the point.
+    if (hasPlaces) root.appendChild(el("div", { class: "card" }, [list]));
     root.appendChild(el("div", { class: "card" }, [
+      el("h2", { text: hasPlaces ? "Add another place" : "Add your first place" }),
       el("div", { class: "grid" }, [
-        el("label", { class: "field" }, ["name", name]),
-        el("label", { class: "field" }, ["label", label]),
-        el("label", { class: "field" }, ["latitude", lat]),
-        el("label", { class: "field" }, ["longitude", lon]),
-        el("label", { class: "field full" }, ["address", address]),
+        el("label", { class: "field" }, ["What do you call it?", name]),
+        el("label", { class: "field" }, ["Full name (optional)", label]),
+        el("label", { class: "field full" }, ["Address (optional)", address]),
+      ]),
+      // Coordinates are what a weather or transit app actually wants, but nobody
+      // should have to meet them first.
+      el("details", { class: "advanced" }, [
+        el("summary", { text: "Advanced: exact coordinates" }),
+        el("div", { class: "grid" }, [
+          el("label", { class: "field" }, ["Latitude", lat]),
+          el("label", { class: "field" }, ["Longitude", lon]),
+        ]),
       ]),
       err,
       el("div", { class: "row-actions" }, [save]),
@@ -1065,63 +1449,131 @@
   }
 
   async function renderSchedules(root) {
-    root.appendChild(el("h2", { text: "Schedules" }));
-    root.appendChild(el("p", { class: "sub", text: "Routines that run on a cron schedule. They act unattended, so they can only do what the scheduler is allowed to do." }));
-    const list = el("ul", { class: "items" });
+    root.appendChild(el("h2", { text: "Automations" }));
+    root.appendChild(el("p", { class: "sub", text: "Things that happen on their own, at a time you choose." }));
+
+    await loadModules();
     const r = await api("GET", "/api/schedules");
     if (reauthed(r)) return;
-    (r.data.schedules || []).forEach(function (s) {
-      const steps = (s.steps || []).map(function (st) { return st.module + "." + st.tool; }).join(", ");
-      const meta = el("span", { class: "grow" }, [
-        el("strong", { text: s.cron }),
-        el("span", { class: "meta", text: "  " + steps + (s.enabled ? "" : "  (disabled)") }),
-      ]);
-      const actions = [];
-      if (s.editable) {
-        const toggle = el("button", { class: "btn small", type: "button", text: s.enabled ? "Disable" : "Enable" });
-        toggle.addEventListener("click", async function () { await api("POST", "/api/schedules/" + encodeURIComponent(s.id) + "/enabled", { enabled: !s.enabled }); renderSettings(); });
-        const del = el("button", { class: "btn small danger", type: "button", text: "Delete" });
-        del.addEventListener("click", async function () { await api("DELETE", "/api/schedules/" + encodeURIComponent(s.id)); renderSettings(); });
-        actions.push(toggle, del);
-      } else {
-        actions.push(el("span", { class: "meta", text: "from config" }));
-      }
-      list.appendChild(el("li", null, [meta].concat(actions)));
-    });
-    if (!(r.data.schedules || []).length) list.appendChild(el("li", { class: "note", text: "No schedules yet." }));
+    const rows = r.data.schedules || [];
 
-    const cron = el("input", { type: "text", placeholder: "cron, e.g. 30 6 * * 1-5" });
-    const module = el("input", { type: "text", placeholder: "module (e.g. time)" });
-    const tool = el("input", { type: "text", placeholder: "tool (e.g. speak_current_time)" });
-    const argsBox = el("textarea", { placeholder: "{ } arguments as JSON (optional)" });
-    const desc = el("input", { type: "text", placeholder: "description (optional)" });
+    if (rows.length) {
+      const list = el("div", { class: "card" });
+      rows.forEach(function (s) {
+        const actions = [];
+        if (s.editable) {
+          const toggle = el("button", { class: "btn small", type: "button", text: s.enabled ? "Pause" : "Resume" });
+          toggle.addEventListener("click", async function () {
+            await api("POST", "/api/schedules/" + encodeURIComponent(s.id) + "/enabled", { enabled: !s.enabled });
+            renderSettings();
+          });
+          const del = el("button", { class: "btn small danger", type: "button", text: "Delete" });
+          del.addEventListener("click", async function () {
+            await api("DELETE", "/api/schedules/" + encodeURIComponent(s.id));
+            renderSettings();
+          });
+          actions.push(toggle, del);
+        } else {
+          actions.push(el("span", { class: "meta", text: "set up on the hub" }));
+        }
+        list.appendChild(el("div", { class: "sched" }, [
+          el("span", { class: "grow" }, [
+            el("div", { class: "when", text: describeCron(s.cron) + (s.enabled ? "" : "  (paused)") }),
+            el("div", { class: "what", text: s.description || describeSteps(s.steps) }),
+          ]),
+        ].concat(actions)));
+      });
+      root.appendChild(list);
+    }
+
+    // ---- the builder: an action, its own fields, and a time ----------------
+    const choices = [];
+    (moduleCache || []).forEach(function (m) {
+      (m.tools || []).forEach(function (tool) {
+        // A routine runs unattended, so a destructive tool is never offered here.
+        if (tool["class"] === "destructive") return;
+        choices.push({ module: m.name, tool: tool.name, schema: tool.schema, ready: m.state === "ready",
+          about: tool.description || "",
+          label: (EMOJI[m.name] || "") + " " + appName(m.name) + " · " + humanizeWords(tool.name) });
+      });
+    });
+
+    const card = el("div", { class: "card" });
+    card.appendChild(el("h2", { text: rows.length ? "Add another" : "Create your first automation" }));
+    if (!choices.length) {
+      blank(card, "Install an app first, then you can automate what it does.", "Browse apps", function () { openSettings("modules"); });
+      root.appendChild(card);
+      return;
+    }
+
+    const what = el("select");
+    choices.forEach(function (c, i) {
+      what.appendChild(el("option", { value: String(i), text: c.label + (c.ready ? "" : " (not set up yet)") }));
+    });
+    const about = el("p", { class: "note" });
+    const fieldsBox = el("div");
+    let fields = null;
+    const buildFields = function () {
+      fieldsBox.textContent = "";
+      const choice = choices[Number(what.value) || 0];
+      about.textContent = choice ? firstSentence(choice.about, 160) : "";
+      fields = fieldsFromSchema(choice && choice.schema);
+      if (!fields.empty) fieldsBox.appendChild(fields.node);
+    };
+    what.addEventListener("change", buildFields);
+
+    const repeat = el("select");
+    REPEATS.forEach(function (rp) { repeat.appendChild(el("option", { value: rp[0], text: rp[1] })); });
+    const at = el("input", { type: "time", value: "08:00" });
+    const weekday = el("select");
+    DAYS.forEach(function (d, i) { weekday.appendChild(el("option", { value: String(i), text: d })); });
+    weekday.value = "1";
+    const monthday = el("input", { type: "number", min: "1", max: "28", value: "1" });
+    const atField = el("label", { class: "field" }, ["Time", at]);
+    const dayField = el("label", { class: "field" }, ["Day", weekday]);
+    const dateField = el("label", { class: "field" }, ["Day of the month", monthday]);
+    const syncWhen = function () {
+      dayField.hidden = repeat.value !== "weekly";
+      dateField.hidden = repeat.value !== "monthly";
+      atField.hidden = repeat.value === "hourly";
+    };
+    repeat.addEventListener("change", syncWhen);
+
     const err = el("div", { class: "err" });
-    const save = el("button", { class: "btn primary", type: "button", text: "Create schedule" });
+    const save = el("button", { class: "btn primary", type: "button", text: "Create automation" });
+    const cronBox = el("input", { type: "text", placeholder: "leave empty unless you know cron" });
+
     save.addEventListener("click", async function () {
       err.textContent = "";
-      let args = {};
-      if (argsBox.value.trim()) { try { args = JSON.parse(argsBox.value); } catch (e) { err.textContent = "Arguments must be valid JSON."; return; } }
-      if (!cron.value.trim() || !module.value.trim() || !tool.value.trim()) { err.textContent = "cron, module and tool are required."; return; }
+      const choice = choices[Number(what.value) || 0];
+      const short = fields ? fields.missing() : [];
+      if (short.length) { err.textContent = "Still needed: " + short.join(", ") + "."; return; }
+      const cron = cronBox.value.trim() || cronFrom(repeat.value, at.value, weekday.value, monthday.value);
       const res = await api("POST", "/api/schedules", {
-        cron: cron.value.trim(),
-        steps: [{ module: module.value.trim(), tool: tool.value.trim(), args: args }],
-        description: desc.value.trim() || null,
+        cron: cron,
+        steps: [{ module: choice.module, tool: choice.tool, args: fields ? fields.values() : {} }],
+        description: firstSentence(choice.about, 110) || choice.label.replace(/^\S+\s/, ""),
       });
-      if (!res.ok) { err.textContent = "Could not create: " + (res.data.detail || res.data.error || res.status); return; }
+      if (!res.ok) { err.textContent = "Could not create it: " + (res.data.detail || res.data.error || res.status); return; }
       renderSettings();
     });
-    root.appendChild(el("div", { class: "card" }, [list]));
-    root.appendChild(el("div", { class: "card" }, [
-      el("div", { class: "grid" }, [
-        el("label", { class: "field full" }, ["cron expression", cron]),
-        el("label", { class: "field" }, ["module", module]),
-        el("label", { class: "field" }, ["tool", tool]),
-        el("label", { class: "field full" }, ["arguments (JSON)", argsBox]),
-        el("label", { class: "field full" }, ["description", desc]),
-      ]),
-      err,
-      el("div", { class: "row-actions" }, [save]),
+
+    card.appendChild(el("div", { class: "builder" }, [
+      el("label", { class: "field" }, ["What should happen?", what]),
+      about,
+      fieldsBox,
+      el("div", { class: "when-row" }, [el("label", { class: "field" }, ["How often?", repeat]), atField, dayField, dateField]),
     ]));
+    card.appendChild(el("details", { class: "advanced" }, [
+      el("summary", { text: "Advanced: write the schedule as cron" }),
+      el("label", { class: "field" }, ["cron expression", cronBox]),
+    ]));
+    card.appendChild(err);
+    card.appendChild(el("div", { class: "row-actions" }, [save]));
+    card.appendChild(el("p", { class: "note", text: "An automation runs by itself, so it can only do what the hub already allows without a person present." }));
+    root.appendChild(card);
+    buildFields();
+    syncWhen();
   }
 
   async function doInstall(body, errBox, btn) {
@@ -1131,67 +1583,87 @@
     btn.disabled = true; btn.textContent = "Installing…";
     const r = await api("POST", "/api/modules", body);
     btn.disabled = false; btn.textContent = label;
-    if (!r.ok || !r.data.ok) { errBox.textContent = "Install failed: " + ((r.data && (r.data.detail || r.data.error)) || r.status); return; }
+    if (!r.ok || !r.data.ok) { errBox.textContent = "That did not work: " + ((r.data && (r.data.detail || r.data.error)) || r.status); return; }
+    moduleCache = null;
     renderSettings();
   }
+  const STATE_WORDS = { ready: "Working", unconfigured: "Needs setup", failed: "Not working", stopped: "Off", degraded: "Having trouble", starting: "Starting" };
   function moduleCard(m) {
     const card = el("div", { class: "card" });
     const rm = el("button", { class: "btn small danger", type: "button", text: "Remove" });
-    rm.addEventListener("click", async function () { rm.disabled = true; await api("DELETE", "/api/modules/" + encodeURIComponent(m.name)); renderSettings(); });
+    rm.addEventListener("click", async function () {
+      rm.disabled = true;
+      await api("DELETE", "/api/modules/" + encodeURIComponent(m.name));
+      moduleCache = null;
+      renderSettings();
+    });
     card.appendChild(el("div", { class: "modhead" }, [
       el("span", { class: "emoji", text: EMOJI[m.name] || EMOJI._default }),
-      el("strong", { text: m.name }),
-      el("span", { class: "badge " + (m.state || ""), text: m.state || "" }),
+      el("strong", { text: appName(m.name) }),
+      el("span", { class: "badge " + (m.state || ""), text: STATE_WORDS[m.state] || m.state || "" }),
       el("span", { class: "spacer" }),
       rm,
     ]));
     if (m.description) card.appendChild(el("p", { class: "sub", text: m.description }));
     if (m.tools && m.tools.length) {
-      const names = m.tools.map(function (t) { return t.name + " (" + t["class"] + ")"; }).join(", ");
-      card.appendChild(el("p", { class: "note", text: "Tools: " + names }));
+      const names = m.tools.map(function (tool) { return humanizeWords(tool.name); }).slice(0, 5).join(" · ");
+      card.appendChild(el("p", { class: "note", text: "Can: " + names }));
     }
     if (m.has_policy_rule === false) {
-      card.appendChild(el("p", { class: "note", text: "The assistant needs a policy rule for these tools in vahub.yaml before it can use them. A dashboard card can read them now." }));
+      card.appendChild(el("p", { class: "note", text: "You can put this on your home screen now. Letting the assistant use it on its own has to be allowed by whoever runs the hub." }));
     }
     const cfg = m.config || { required: [], optional: [], set: [] };
     const setKeys = cfg.set || [];
     const allKeys = (cfg.required || []).concat(cfg.optional || []);
     if (allKeys.length) {
-      card.appendChild(el("p", { class: "note", text: "Configuration (values are stored on the hub, never shown back):" }));
+      card.appendChild(el("p", { class: "note", text: "Details it needs. They are kept on the hub and never shown back to you." }));
       allKeys.forEach(function (key) {
         const isReq = (cfg.required || []).indexOf(key) !== -1;
         const isSet = setKeys.indexOf(key) !== -1;
         const inp = el("input", { type: "password", autocomplete: "off",
-          placeholder: isSet ? "•••••• set — type to replace" : (isReq ? "required" : "optional") });
+          placeholder: isSet ? "•••••• saved — type to replace" : (isReq ? "needed" : "optional") });
         const save = el("button", { class: "btn small", type: "button", text: "Save" });
         const err = el("div", { class: "err" });
         save.addEventListener("click", async function () {
           err.textContent = "";
           if (!inp.value) { err.textContent = "Enter a value."; return; }
           const res = await api("PUT", "/api/modules/" + encodeURIComponent(m.name) + "/config/" + encodeURIComponent(key), { value: inp.value });
-          if (!res.ok || !res.data.ok) { err.textContent = "Could not save: " + ((res.data && (res.data.detail || res.data.error)) || res.status); return; }
+          if (!res.ok || !res.data.ok) { err.textContent = "Could not save that: " + ((res.data && (res.data.detail || res.data.error)) || res.status); return; }
+          moduleCache = null;
           renderSettings();
         });
-        const row = el("div", { class: "cfgrow" }, [el("span", { class: "key" + (isReq ? " req" : ""), text: key }), inp, save]);
+        const row = el("div", { class: "cfgrow" }, [
+          el("span", { class: "key" + (isReq ? " req" : ""), text: humanizeKey(m.name, key) }),
+          inp, save,
+        ]);
         if (isSet) {
           const clear = el("button", { class: "btn small danger", type: "button", text: "Clear" });
-          clear.addEventListener("click", async function () { await api("DELETE", "/api/modules/" + encodeURIComponent(m.name) + "/config/" + encodeURIComponent(key)); renderSettings(); });
+          clear.addEventListener("click", async function () {
+            await api("DELETE", "/api/modules/" + encodeURIComponent(m.name) + "/config/" + encodeURIComponent(key));
+            moduleCache = null;
+            renderSettings();
+          });
           row.appendChild(clear);
         }
         card.appendChild(row);
         card.appendChild(err);
       });
     }
-    if (m.missing_config && m.missing_config.length) card.appendChild(el("p", { class: "err", text: "Needs: " + m.missing_config.join(", ") }));
+    if (m.missing_config && m.missing_config.length) {
+      const needed = m.missing_config.map(function (k) { return humanizeKey(m.name, k); }).join(", ");
+      card.appendChild(el("p", { class: "err", text: "Fill in " + needed + " to switch it on." }));
+    }
     return card;
   }
   async function renderModules(root) {
-    root.appendChild(el("h2", { text: "Modules" }));
-    root.appendChild(el("p", { class: "sub", text: "Install a module, give it the settings it needs, and remove it. Installing does not grant permission: a tool stays denied until you add a policy rule for it in vahub.yaml on the host." }));
-    const r = await api("GET", "/api/modules");
-    if (reauthed(r)) return;
-    const mods = (r.ok && r.data.modules) || [];
-    if (!mods.length) root.appendChild(el("p", { class: "note", text: "No modules installed yet." }));
+    root.appendChild(el("h2", { text: "Apps" }));
+    root.appendChild(el("p", { class: "sub", text: "Add what the assistant can reach: your mail, your calendar, your lights. Each one only gets the details you give it." }));
+    const mods = await loadModules(true);
+    if (!mods.length) {
+      const first = el("div", { class: "card" });
+      blank(first, "Nothing added yet. Pick one below to get started.", null, null);
+      root.appendChild(first);
+    }
     mods.forEach(function (m) { root.appendChild(moduleCard(m)); });
 
     const avList = el("div");
@@ -1200,26 +1672,32 @@
     const srcBtn = el("button", { class: "btn", type: "button", text: "Install from source" });
     srcBtn.addEventListener("click", function () { doInstall({ source: src.value.trim() }, srcErr, srcBtn); });
     root.appendChild(el("div", { class: "card" }, [
-      el("h2", { text: "Add a module" }),
-      el("p", { class: "sub", text: "From the registry:" }),
+      el("h2", { text: "Add an app" }),
       avList,
-      el("p", { class: "sub", text: "Or from a pinned source:" }),
-      el("div", { class: "grid" }, [el("label", { class: "field full" }, ["source", src])]),
-      srcErr,
-      el("div", { class: "row-actions" }, [srcBtn]),
+      // Installing from an arbitrary link is a power-user escape hatch, so it is
+      // folded away rather than being the second thing a person sees.
+      el("details", { class: "advanced" }, [
+        el("summary", { text: "Advanced: install from a link or folder" }),
+        el("div", { class: "grid" }, [el("label", { class: "field full" }, ["source", src])]),
+        srcErr,
+        el("div", { class: "row-actions" }, [srcBtn]),
+      ]),
     ]));
 
     const a = await api("GET", "/api/modules/available");
-    if (a.data && a.data.error) { avList.appendChild(el("p", { class: "note", text: "Registry unavailable: " + a.data.error })); return; }
+    if (a.data && a.data.error) { avList.appendChild(el("p", { class: "note", text: "The app list could not be reached right now." })); return; }
     const notInstalled = ((a.ok && a.data.available) || []).filter(function (it) { return !it.installed; });
-    if (!notInstalled.length) { avList.appendChild(el("p", { class: "note", text: "Everything in the registry is installed." })); return; }
+    if (!notInstalled.length) { avList.appendChild(el("p", { class: "note", text: "You already have every app on the list." })); return; }
     const ul = el("ul", { class: "items" });
     notInstalled.forEach(function (it) {
       const btn = el("button", { class: "btn small primary", type: "button", text: "Install" });
       const err = el("div", { class: "err" });
       btn.addEventListener("click", function () { doInstall({ name: it.name }, err, btn); });
       ul.appendChild(el("li", null, [
-        el("span", { class: "grow" }, [el("strong", { text: it.name }), el("span", { class: "meta", text: "  " + (it.description || "") })]),
+        el("span", { class: "grow" }, [
+          el("strong", { text: (EMOJI[it.name] || EMOJI._default) + " " + appName(it.name) }),
+          el("span", { class: "meta", text: "  " + (it.description || "") }),
+        ]),
         btn,
       ]));
       ul.appendChild(err);
@@ -1229,61 +1707,13 @@
 
   async function renderPreferences(root) {
     root.appendChild(el("h2", { text: "Preferences" }));
-    root.appendChild(el("p", { class: "sub", text: "Simple key/value settings, e.g. units = metric, language = en." }));
-    const r = await api("GET", "/api/settings");
-    if (reauthed(r)) return;
-    const prefs = r.data.settings || {};
-    const memory = r.data.memory || {};
-    const list = el("ul", { class: "items" });
-    const prefKeys = Object.keys(prefs).filter(function (k) { return k.indexOf("ui:") !== 0; });
-    prefKeys.forEach(function (k) {
-      const del = el("button", { class: "btn small danger", type: "button", text: "Delete" });
-      del.addEventListener("click", async function () { await api("DELETE", "/api/settings/" + encodeURIComponent(k)); renderSettings(); });
-      list.appendChild(el("li", null, [
-        el("span", { class: "grow" }, [el("strong", { text: k }), el("span", { class: "meta", text: "  " + JSON.stringify(prefs[k]) })]),
-        del,
-      ]));
-    });
-    if (!prefKeys.length) list.appendChild(el("li", { class: "note", text: "No preferences set." }));
+    root.appendChild(el("p", { class: "sub", text: "How this app looks and behaves. Everything here takes effect straight away." }));
 
-    const key = el("input", { type: "text", placeholder: "key (e.g. units)" });
-    const value = el("input", { type: "text", placeholder: "value (e.g. metric)" });
-    const err = el("div", { class: "err" });
-    const save = el("button", { class: "btn primary", type: "button", text: "Save preference" });
-    save.addEventListener("click", async function () {
-      err.textContent = "";
-      const k = key.value.trim();
-      if (!k) { err.textContent = "A key is required."; return; }
-      const res = await api("PUT", "/api/settings/" + encodeURIComponent(k), { value: value.value });
-      if (!res.ok) { err.textContent = "Could not save (keys are lowercase letters, digits, . _ : -)."; return; }
-      renderSettings();
-    });
-    root.appendChild(el("div", { class: "card" }, [list]));
-    root.appendChild(el("div", { class: "card" }, [
-      el("div", { class: "grid" }, [el("label", { class: "field" }, ["key", key]), el("label", { class: "field" }, ["value", value])]),
-      err,
-      el("div", { class: "row-actions" }, [save]),
-    ]));
-
-    const memList = el("ul", { class: "items" });
-    Object.keys(memory).forEach(function (k) {
-      memList.appendChild(el("li", null, [el("span", { class: "grow" }, [el("strong", { text: k }), el("span", { class: "meta", text: "  " + JSON.stringify(memory[k]) })])]));
-    });
-    if (Object.keys(memory).length) {
-      root.appendChild(el("h2", { text: "The assistant remembers" }));
-      root.appendChild(el("p", { class: "sub", text: "Facts you asked it to keep. Ask it to forget one to remove it." }));
-      root.appendChild(el("div", { class: "card" }, [memList]));
-    }
-  }
-
-  async function renderAppearance(root) {
-    root.appendChild(el("h2", { text: "Appearance" }));
-    root.appendChild(el("p", { class: "sub", text: "Pick an accent colour and a theme. Your choice is saved on the hub." }));
-
+    // ---- look ------------------------------------------------------------
     const swatches = el("div", { class: "swatches" });
     Object.keys(ACCENTS).forEach(function (name) {
       const sw = el("button", { class: "swatch" + (currentAccent === name ? " active" : ""), type: "button",
-        title: name, "aria-label": name });
+        title: humanizeWords(name), "aria-label": humanizeWords(name) });
       sw.style.setProperty("background", ACCENTS[name]);   // CSSOM write, not a style attribute
       sw.addEventListener("click", async function () {
         applyAccent(name);
@@ -1292,24 +1722,75 @@
       });
       swatches.appendChild(sw);
     });
-
-    const seg = el("div", { class: "segmented" });
-    [["auto", "Auto"], ["light", "Light"], ["dark", "Dark"]].forEach(function (t) {
-      const b = el("button", { class: (currentTheme === t[0] ? "active" : ""), type: "button", text: t[1] });
-      b.addEventListener("click", async function () {
-        applyTheme(t[0]);
-        await api("PUT", "/api/settings/" + encodeURIComponent("ui:theme"), { value: t[0] });
-        renderSettings();
-      });
-      seg.appendChild(b);
-    });
-
-    root.appendChild(el("div", { class: "card" }, [
-      el("div", { class: "field-label", text: "Accent" }),
+    const look = el("div", { class: "card" }, [
+      segmentedRow("Theme", "Follow the system, or pick one.", [["auto", "Auto"], ["light", "Light"], ["dark", "Dark"]], currentTheme,
+        async function (v) { applyTheme(v); await api("PUT", "/api/settings/" + encodeURIComponent("ui:theme"), { value: v }); renderSettings(); }),
+      el("div", { class: "setrow" }, [
+        el("div", { class: "text" }, [el("div", { class: "name", text: "Colour" }), el("div", { class: "why", text: "Used for buttons and highlights." })]),
+      ]),
       swatches,
-      el("div", { class: "field-label", text: "Theme" }),
-      seg,
-    ]));
+    ]);
+    root.appendChild(el("h2", { text: "Look" }));
+    root.appendChild(look);
+
+    // ---- behaviour -------------------------------------------------------
+    const keep = async function () { await savePrefs(); renderSettings(); };
+    const behaviour = el("div", { class: "card" }, [
+      segmentedRow("Start on", "The page you see when you open the app.", [["home", "Home"], ["thread", "Chat"]], prefs.startPage,
+        function (v) { prefs.startPage = v; keep(); }),
+      switchRow("Read replies aloud", "Speak the assistant's answers.", prefs.readAloud,
+        function (on) { prefs.readAloud = on; readBox.checked = on; keep(); }),
+      switchRow("24-hour clock", "Show 14:00 instead of 2:00 pm.", prefs.clock24,
+        function (on) { prefs.clock24 = on; keep(); }),
+      switchRow("Show seconds", "On the clock card.", prefs.clockSeconds,
+        function (on) { prefs.clockSeconds = on; keep(); }),
+      switchRow("Animations", "Cards glide when you move them. Turn off for less motion.", prefs.motion,
+        function (on) { prefs.motion = on; keep(); }),
+    ]);
+    root.appendChild(el("h2", { text: "Behaviour" }));
+    root.appendChild(behaviour);
+
+    // ---- what the assistant remembers ------------------------------------
+    const r = await api("GET", "/api/settings");
+    if (reauthed(r)) return;
+    const memory = r.data.memory || {};
+    const keys = Object.keys(memory);
+    root.appendChild(el("h2", { text: "What the assistant remembers" }));
+    const memCard = el("div", { class: "card" });
+    if (!keys.length) {
+      blank(memCard, "Nothing yet. Say “remember that I live in Zürich” and it shows up here.", "Say it", function () { selectTab("thread"); });
+    } else {
+      const memList = el("ul", { class: "items" });
+      keys.forEach(function (k) {
+        memList.appendChild(el("li", null, [
+          el("span", { class: "grow" }, [
+            el("strong", { text: humanizeWords(k) }),
+            el("span", { class: "meta", text: "  " + String(memory[k]) }),
+          ]),
+        ]));
+      });
+      memCard.appendChild(memList);
+      memCard.appendChild(el("p", { class: "note", text: "Ask the assistant to forget one to remove it." }));
+    }
+    root.appendChild(memCard);
+
+    // Raw key/value settings still exist for anyone who wants them, but they are
+    // not the thing a person is shown first.
+    const prefs_raw = r.data.settings || {};
+    const rawKeys = Object.keys(prefs_raw).filter(function (k) { return k.indexOf("ui:") !== 0; });
+    const adv = el("details", { class: "advanced" }, [el("summary", { text: "Advanced: stored values" })]);
+    const list = el("ul", { class: "items" });
+    rawKeys.forEach(function (k) {
+      const del = el("button", { class: "btn small danger", type: "button", text: "Delete" });
+      del.addEventListener("click", async function () { await api("DELETE", "/api/settings/" + encodeURIComponent(k)); renderSettings(); });
+      list.appendChild(el("li", null, [
+        el("span", { class: "grow" }, [el("strong", { text: k }), el("span", { class: "meta", text: "  " + JSON.stringify(prefs_raw[k]) })]),
+        del,
+      ]));
+    });
+    if (!rawKeys.length) list.appendChild(el("li", { class: "note", text: "Nothing stored beyond the settings above." }));
+    adv.appendChild(el("div", { class: "card" }, [list]));
+    root.appendChild(adv);
   }
 
   // ---- tabs -------------------------------------------------------------
@@ -1328,14 +1809,18 @@
 
   // ---- auth gate --------------------------------------------------------
   const gate = $("gate"), gateBody = $("gateBody");
-  function showApp(me) {
+  async function showApp(me) {
     signedOut = false;
     currentUser = (me && me.username) || null;
-    dashCards = null; adderOpen = false; settingsSection = "places";
+    dashCards = null; adderOpen = false; settingsSection = "places"; moduleCache = null;
     gate.classList.remove("active");
     $("topbar").hidden = false;
     if (me && me.username) { $("who").textContent = me.username; $("logout").hidden = false; }
-    selectTab("home");
+    // Load the saved look and preferences before painting, so the first frame is
+    // already the right theme and the right starting page.
+    await loadDash();
+    if (signedOut) return;
+    selectTab(prefs.startPage === "thread" ? "thread" : "home");
     startAssistant();
     connect();
   }

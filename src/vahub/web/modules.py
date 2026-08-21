@@ -23,7 +23,7 @@ module's environment, exactly as it reads a scoped environment variable.
 from __future__ import annotations
 
 import asyncio
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, Path, Request
 from fastapi.responses import JSONResponse
@@ -93,8 +93,22 @@ def build_router(rt: Runtime) -> APIRouter:
         for m in installed:
             manifest = m.manifest
             live = rt.supervisor.modules.get(m.name)
+            # The live tool list carries each tool's description and input schema.
+            # The UI needs both to offer real form fields (a "station" box) instead
+            # of asking a person to type JSON, so they are passed through here.
+            live_tools = {
+                t.get("name"): t for t in (live.tools if live is not None else []) if isinstance(t, dict)
+            }
             tools = (
-                [{"name": t, "class": spec.cls} for t, spec in manifest.tools.items()]
+                [
+                    {
+                        "name": t,
+                        "class": spec.cls,
+                        "description": _tool_text(live_tools.get(t), spec.description),
+                        "schema": _tool_schema(live_tools.get(t)),
+                    }
+                    for t, spec in manifest.tools.items()
+                ]
                 if manifest is not None
                 else []
             )
@@ -266,6 +280,23 @@ def build_router(rt: Runtime) -> APIRouter:
         )
 
     return router
+
+
+def _tool_text(live: Any, declared: str | None) -> str | None:
+    """A tool's description: what the running module says, or the manifest's."""
+    if isinstance(live, dict) and isinstance(live.get("description"), str):
+        return live["description"]
+    return declared
+
+
+def _tool_schema(live: Any) -> dict[str, Any] | None:
+    """A tool's JSON input schema, when the running module published a usable one.
+    It is produced by code the hub did not write, so anything but an object is
+    dropped rather than passed to the browser as if it were a schema."""
+    if not isinstance(live, dict):
+        return None
+    schema = live.get("inputSchema")
+    return schema if isinstance(schema, dict) else None
 
 
 def _manifest(rt: Runtime, name: str) -> Manifest | None:

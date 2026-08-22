@@ -13,10 +13,33 @@ registry entry is listed under Changed with what an operator has to do.
 
 ### Added
 
+* **Account roles: admin and user.** Every account used to have identical rights,
+  which is fine for one person and wrong for a household: whoever could sign in
+  could install a module and hand it a token. An **admin** may install, configure
+  and remove apps and manage accounts; a **user** may talk to the assistant,
+  arrange the dashboard, approve a held-back action, and edit the places and
+  schedules the household shares. The role is read from the account on every
+  request, so a demotion or a disable takes effect on the next request rather
+  than when a cookie expires. Neither role can edit the policy: that is still
+  `vahub.yaml`. With `web.auth.enabled` off there are no accounts and no roles,
+  and everyone the proxy lets in is an operator, exactly as before.
+* **Managing accounts from the browser.** An admin can add, block, promote,
+  demote, reset and remove accounts under their name in the sidebar; anyone can
+  change their own password (which requires the current one, and ends every other
+  session). `vahub user` still does all of it on the host and remains the way
+  back in. The hub refuses the web change that would leave no admin able to sign
+  in; the CLI warns and obeys, because it is the recovery path.
+* **A sidebar you can collapse, with your apps in it.** Apps moved out of
+  Settings and into the sidebar, one entry each with a state dot, and each app
+  now has a page of its own (what it is, what it can do, the details it needs,
+  and a one-tap way to put a read-only tool on Home). The sidebar collapses to a
+  strip of icons; the choice is remembered in the browser, not in the hub's
+  shared settings. Your name sits at the bottom and opens everything about you
+  and the household: places, automations, preferences, your password, and People.
 * **Built-in accounts and login.** The hub can require its own sign in instead of
   relying only on a reverse proxy. Named accounts (scrypt-hashed passwords,
   revocable DB sessions in an HttpOnly SameSite=Strict cookie) are managed with
-  `vahub user add/list/passwd/disable/enable/remove`; the hub never sets a
+  `vahub user add/list/passwd/role/disable/enable/remove`; the hub never sets a
   password itself. `web.auth.enabled` defaults on, so a browser-reachable hub is
   not open. The audit log records which account confirmed an action.
 * **Saved data the owner and the assistant can edit.** Locations (home, work),
@@ -24,19 +47,40 @@ registry entry is listed under Changed with what an operator has to do.
   database. A built-in `core` module offers gated tools (set_location, remember,
   create_schedule, ...) so the agent can manage them through the same policy gate
   as any module; a signed-in owner edits the same data through origin-checked
-  REST routes and the web UI. Policy rules and accounts stay file/CLI-only.
+  REST routes and the web UI. Policy rules stay file-only; accounts are managed
+  by an admin or with `vahub user`.
 * **Runtime-editable schedules.** Cron routines can be created and removed at
   runtime (by the UI or the assistant) and are persisted. They still run as
   principal `scheduler`, so they are bounded by the scheduler's policy at run
   time regardless of who created them. File schedules stay read-only.
-* **A real web UI.** Tabs for the assistant, Locations, Settings and Schedules,
-  behind the login. Still rendered without `innerHTML`; the CSP nonce is bound to
-  the inline tags.
+* **A real web UI.** A collapsible sidebar (Home, Chat, your apps), with places,
+  automations, preferences and people behind your name, all behind the login.
+  Still rendered without `innerHTML`; the CSP nonce is bound to the inline tags.
 * **New modules** (in vahub-modules): `weather` (Open-Meteo, no key) and
   `calculator` (safe arithmetic, no eval, no network).
 
+### Fixed
+
+* **Signing out now takes the conversation with it.** The transcript stayed on
+  screen and the browser kept its `session_id`, so on a shared tablet the next
+  person saw the previous account's bubbles and their first message was appended
+  to that account's history (a conversation is not bound to who created it). The
+  thread, the session id, and the cached app/settings panels are all cleared on
+  sign-out and on a session that expires mid-use.
+
 ### Changed
 
+* Store schema v4 adds `users.role`. Accounts that already exist become admins:
+  they were created under the old rule, where signing in meant full rights, so
+  demoting them silently would take away something the operator had already
+  granted. Narrow them down deliberately with `vahub user role <name> user`.
+* `vahub user add` creates a plain user; pass `--admin` for an admin. The first
+  account on a hub is an admin whatever you pass. `vahub user list` shows the
+  role, and `vahub user role <name> <admin|user>` changes it.
+* `GET /api/modules` returns a trimmed view to a non-admin (name, version,
+  description, state, tools) and carries `can_manage`. Configuration keys, the
+  last error and `has_policy_rule` are admin-only, as is
+  `GET /api/modules/available` and every module write.
 * Store schema v2 (accounts, sessions, preferences, locations, runtime
   schedules). Existing databases migrate on start.
 * The reverse proxy no longer 404s `/api/schedules`, now a signed-in route.

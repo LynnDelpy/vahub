@@ -1,11 +1,19 @@
 """Module management from the web UI: install, configure, remove.
 
-A signed-in owner can do from the browser what `vahub module` does from the
-shell: browse the registry, install a module, set the tokens it needs, and remove
-it, all without a restart. These routes are guarded by the login and
-origin-checked on every write, like the rest of the management surface.
+An **admin** can do from the browser what `vahub module` does from the shell:
+browse the registry, install a module, set the tokens it needs, and remove it,
+all without a restart. These routes are guarded by the login, restricted to the
+admin role, and origin-checked on every write.
 
-Two boundaries hold here, deliberately.
+Why the admin role and not merely a signed-in account: installing a module runs
+somebody else's code on the host, and configuring one hands it a credential.
+Those are the two most consequential things the web interface can do, so they
+belong to whoever runs the hub rather than to everyone who may talk to the
+assistant. A plain user still *sees* the installed apps (the dashboard and the
+automation builder are built out of them), but the view they get carries no
+configuration and no operator detail, and every write here refuses them.
+
+Three boundaries hold here, deliberately.
 
 Installing a module grants the assistant nothing. Its tools stay denied to the
 model and the scheduler until a policy rule is written in vahub.yaml, which is a
@@ -33,6 +41,7 @@ from ..modules.installer import Installer, InstallError
 from ..modules.registry_client import RegistryClient, RegistryError
 from ..modules.store import ModuleStore, StoreError
 from ..modules.verify import VerifyError
+from . import auth as web_auth
 from .security import check_origin
 
 if TYPE_CHECKING:
@@ -85,6 +94,12 @@ def build_router(rt: Runtime) -> APIRouter:
     # --- listing ----------------------------------------------------------
     @router.get("/modules")
     async def list_modules(request: Request) -> JSONResponse:
+        """The installed apps. Everyone signed in may read this, because the
+        dashboard and the automation builder are made of it, but only an admin
+        gets the operator half: which configuration keys are set, why a module
+        failed to start, and whether the policy has a rule for it. To a plain
+        user an app is a name, a state and what it can do."""
+        admin = await web_auth.is_admin(request, rt)
         store = ModuleStore.from_config(rt.config)
         # Reading and parsing every manifest touches the disk, so it runs off the
         # event loop rather than stalling other requests.
@@ -123,27 +138,34 @@ def build_router(rt: Runtime) -> APIRouter:
             state = live.state.value if live is not None else "stopped"
             missing = list(live.missing_config) if live is not None else m.missing_config()
             last_error = live.last_error if live is not None else m.manifest_error
-            out.append(
-                {
-                    "name": m.name,
-                    "version": m.version,
-                    "description": manifest.description if manifest is not None else "",
-                    "state": state,
-                    "last_error": last_error,
-                    "missing_config": missing,
-                    "tools": tools,
-                    "config": {
-                        "required": required,
-                        "optional": optional,
-                        "set": await rt.store.module_config_keys(m.name),
-                    },
-                    "has_policy_rule": has_rule,
-                }
-            )
-        return JSONResponse({"modules": out})
+            entry: dict[str, Any] = {
+                "name": m.name,
+                "version": m.version,
+                "description": manifest.description if manifest is not None else "",
+                "state": state,
+                "tools": tools,
+            }
+            if admin:
+                entry.update(
+                    {
+                        "last_error": last_error,
+                        "missing_config": missing,
+                        "config": {
+                            "required": required,
+                            "optional": optional,
+                            "set": await rt.store.module_config_keys(m.name),
+                        },
+                        "has_policy_rule": has_rule,
+                    }
+                )
+            out.append(entry)
+        return JSONResponse({"modules": out, "can_manage": admin})
 
     @router.get("/modules/available")
     async def available(request: Request, q: str = "") -> JSONResponse:
+        # The catalogue is the first half of installing something, so it is the
+        # admin's view; there is nothing here a plain user can act on.
+        await web_auth.require_admin(request, rt)
         store = ModuleStore.from_config(rt.config)
         installed = {m.name for m in store.list_installed()}
         registry = RegistryClient.from_config(rt.config)
@@ -169,6 +191,7 @@ def build_router(rt: Runtime) -> APIRouter:
     # --- install / remove -------------------------------------------------
     @router.post("/modules")
     async def install(body: InstallBody, request: Request) -> JSONResponse:
+        await web_auth.require_admin(request, rt)
         check_origin(request, rt.config)
         if not body.name and not body.source:
             return JSONResponse({"ok": False, "error": "need_name_or_source"}, status_code=400)
@@ -205,6 +228,7 @@ def build_router(rt: Runtime) -> APIRouter:
 
     @router.delete("/modules/{name}")
     async def remove(request: Request, name: str = Path(pattern=_MODULE)) -> JSONResponse:
+        await web_auth.require_admin(request, rt)
         check_origin(request, rt.config)
         async with install_lock:
             await rt.supervisor.remove_module(name)  # stop the live process first
@@ -220,6 +244,7 @@ def build_router(rt: Runtime) -> APIRouter:
     # --- per-module configuration -----------------------------------------
     @router.get("/modules/{name}/config")
     async def get_config(request: Request, name: str = Path(pattern=_MODULE)) -> JSONResponse:
+        await web_auth.require_admin(request, rt)
         manifest = _manifest(rt, name)
         if manifest is None:
             return JSONResponse({"ok": False, "error": "unknown_module"}, status_code=404)
@@ -239,6 +264,7 @@ def build_router(rt: Runtime) -> APIRouter:
         name: str = Path(pattern=_MODULE),
         key: str = Path(pattern=_KEY),
     ) -> JSONResponse:
+        await web_auth.require_admin(request, rt)
         check_origin(request, rt.config)
         # Hold the install lock so a config change cannot interleave with an
         # install or remove of the same module. Without it, a config edit racing
@@ -265,6 +291,7 @@ def build_router(rt: Runtime) -> APIRouter:
         name: str = Path(pattern=_MODULE),
         key: str = Path(pattern=_KEY),
     ) -> JSONResponse:
+        await web_auth.require_admin(request, rt)
         check_origin(request, rt.config)
         async with install_lock:  # mutually exclusive with install/remove, as above
             # A removed module has no manifest on disk; refuse to touch config for

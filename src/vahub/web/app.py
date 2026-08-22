@@ -109,9 +109,13 @@ def create_app(rt: Runtime) -> FastAPI:
         # A public path is not resolved here at all: /health and /ready are
         # polled by machines and must not each cost a database query. The one
         # public route that cares who you are, /api/me, asks for itself.
-        if rt.config.web.auth.enabled and not web_auth.is_public_path(request.url.path):
-            if await web_auth.current_identity(request, rt) is None:
-                return JSONResponse({"ok": False, "error": "auth_required"}, status_code=401)
+        # `and` short-circuits, so a public path never reaches the lookup.
+        if (
+            rt.config.web.auth.enabled
+            and not web_auth.is_public_path(request.url.path)
+            and await web_auth.current_identity(request, rt) is None
+        ):
+            return JSONResponse({"ok": False, "error": "auth_required"}, status_code=401)
         return await call_next(request)
 
     @app.middleware("http")

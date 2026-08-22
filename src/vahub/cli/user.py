@@ -84,7 +84,8 @@ def add(
         raise typer.Exit(1)
     config = _config(ctx)
     hashed = hash_password(_prompt_password())
-    role = ROLE_ADMIN if admin else ROLE_USER
+    # What the account ended up with. Only `go` can decide it, because only it
+    # can see whether this is the first account on the hub.
     granted: list[str] = []
 
     async def go(store: Store) -> None:

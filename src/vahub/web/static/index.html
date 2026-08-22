@@ -36,7 +36,7 @@
 
     /* shape */
     --r-control: .5rem; --r-card: .875rem; --r-pill: 999px;
-    --rail: 232px; --tabbar: 3.5rem; --header: 3.25rem; --tap: 2.75rem;
+    --rail: 232px; --rail-collapsed: 4.25rem; --tabbar: 3.5rem; --header: 3.25rem; --tap: 2.75rem;
 
     /* warm neutrals, light */
     --bg: #faf9f7; --surface: #ffffff; --sunken: #f2efeb; --raised: #ffffff;
@@ -82,18 +82,75 @@
   #shell[hidden] { display: none; }
   .col { flex: 1; min-width: 0; display: flex; flex-direction: column; height: 100dvh; }
 
-  /* side rail (desktop) */
-  #rail { display: none; width: var(--rail); flex: none; border-right: 1px solid var(--line); background: var(--surface); padding: var(--s5) var(--s3); flex-direction: column; gap: var(--s2); position: sticky; top: 0; height: 100dvh; }
-  .brand { display: flex; align-items: center; gap: var(--s2); padding: 0 var(--s2) var(--s5); }
-  .brand .mark { width: 1.5rem; height: 1.5rem; border-radius: 7px; background: var(--accent-fill); }
-  .brand .name { font-size: var(--fs-lead); font-weight: 600; letter-spacing: -.01em; }
-  #railnav { display: flex; flex-direction: column; gap: 2px; }
+  /* side rail (desktop) ---------------------------------------------------
+   * It holds where you can go: the two places the assistant lives, then your
+   * apps. It collapses to a strip of icons, because a hub you leave open all
+   * day should be able to get out of the way. Your name sits at the bottom,
+   * and everything about you and the household hangs off it.
+   */
+  #rail { display: none; width: var(--rail); flex: none; border-right: 1px solid var(--line); background: var(--surface); padding: var(--s4) var(--s3) var(--s3); flex-direction: column; gap: var(--s2); position: sticky; top: 0; height: 100dvh; transition: width .16s cubic-bezier(.2,.9,.3,1); }
+  .brand { display: flex; align-items: center; gap: var(--s2); padding: 0 var(--s1) var(--s4); min-height: var(--tap); }
+  .brand .mark { width: 1.5rem; height: 1.5rem; border-radius: 7px; background: var(--accent-fill); flex: none; margin-left: calc(var(--s1) + 1px); }
+  .brand .name { font-size: var(--fs-lead); font-weight: 600; letter-spacing: -.01em; flex: 1; min-width: 0; overflow: hidden; }
+  .railtoggle { margin-left: 0; width: 2rem; height: 2rem; flex: none; }
+  .railtoggle svg { width: 1.125rem; height: 1.125rem; }
+
+  #railnav { display: flex; flex-direction: column; gap: 2px; flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; scrollbar-width: thin; }
   .navitem { display: flex; align-items: center; gap: var(--s3); width: 100%; min-height: var(--tap); padding: 0 var(--s3); border: none; border-radius: var(--r-control); background: transparent; color: var(--text-2); font: 500 var(--fs-body)/1 var(--font); cursor: pointer; text-align: left; }
   .navitem:hover { background: var(--sunken); color: var(--text); }
   .navitem.active { background: var(--accent-weak); color: var(--text); font-weight: 600; }
-  .navitem.active svg { color: var(--accent-text); }
-  .rail-foot { margin-top: auto; display: flex; align-items: center; gap: var(--s2); padding: var(--s3) var(--s2) 0; border-top: 1px solid var(--line); font-size: var(--fs-meta); color: var(--text-3); }
-  .rail-foot .who { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .navitem.active > svg { color: var(--accent-text); }
+  .navitem svg { flex: none; }
+  .navitem .label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .navitem.add { color: var(--text-3); }
+  .navitem.add:hover { color: var(--accent-text); }
+
+  .railgroup { display: flex; flex-direction: column; gap: 2px; margin-top: var(--s4); }
+  .railnote { margin: 0; padding: 0 var(--s3) var(--s2); font-size: var(--fs-meta); color: var(--text-3); }
+
+  /* A module's state, small enough to ignore and specific enough to notice. */
+  .statedot { width: .4375rem; height: .4375rem; border-radius: 50%; flex: none; background: var(--text-3); }
+  .statedot.ready { background: var(--ok); }
+  .statedot.failed { background: var(--danger); }
+  .statedot.unconfigured, .statedot.degraded, .statedot.starting { background: var(--warn); }
+  .statedot.stopped { background: var(--line-strong); }
+
+  /* the account button and the menu that hangs above it */
+  .rail-foot { position: relative; margin-top: var(--s2); padding-top: var(--s3); border-top: 1px solid var(--line); }
+  .accountbtn { display: flex; align-items: center; gap: var(--s3); width: 100%; min-height: var(--tap); padding: 0 var(--s2); border: none; border-radius: var(--r-control); background: transparent; color: var(--text); font: 500 var(--fs-body)/1 var(--font); cursor: pointer; text-align: left; }
+  .accountbtn:hover { background: var(--sunken); }
+  .accountbtn[aria-expanded="true"] { background: var(--sunken); }
+  .accountbtn .who { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .accountbtn svg { color: var(--text-3); }
+  .avatar { display: inline-flex; align-items: center; justify-content: center; width: 1.75rem; height: 1.75rem; flex: none; border-radius: 50%; background: var(--accent-fill); color: var(--accent-fg); font: 600 var(--fs-meta)/1 var(--font); text-transform: uppercase; }
+  .avatar.lg { width: 2.5rem; height: 2.5rem; font-size: var(--fs-body); }
+
+  .menu { position: absolute; bottom: calc(100% + var(--s1)); left: 0; min-width: 13.5rem; padding: var(--s1); background: var(--raised); border: 1px solid var(--line-strong); border-radius: var(--r-card); box-shadow: var(--shadow-lift); z-index: 40; }
+  .menu[hidden] { display: none; }
+  .menuhead { padding: var(--s2) var(--s3) var(--s2); border-bottom: 1px solid var(--line); margin-bottom: var(--s1); }
+  .menuhead .n { display: block; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .menuhead .r { display: block; font-size: var(--fs-meta); color: var(--text-3); }
+  .menuitem { display: flex; align-items: center; gap: var(--s3); width: 100%; min-height: 2.5rem; padding: 0 var(--s3); border: none; border-radius: var(--r-control); background: transparent; color: var(--text); font: 500 var(--fs-meta)/1 var(--font); cursor: pointer; text-align: left; }
+  .menuitem:hover { background: var(--sunken); }
+  .menuitem svg { color: var(--text-3); }
+  .menuitem.leave { color: var(--danger); }
+  .menuitem.leave svg { color: var(--danger); }
+  .menusep { height: 1px; margin: var(--s1) var(--s2); background: var(--line); }
+
+  /* collapsed: icons only, and nothing that needs width */
+  #shell[data-rail="collapsed"] #rail { width: var(--rail-collapsed); padding-left: var(--s2); padding-right: var(--s2); }
+  #shell[data-rail="collapsed"] .brand { flex-direction: column; gap: var(--s3); padding-bottom: var(--s3); }
+  #shell[data-rail="collapsed"] .brand .name,
+  #shell[data-rail="collapsed"] .navitem .label,
+  #shell[data-rail="collapsed"] .railnote,
+  #shell[data-rail="collapsed"] .accountbtn .who,
+  #shell[data-rail="collapsed"] .accountbtn > svg { display: none; }
+  #shell[data-rail="collapsed"] .navitem,
+  #shell[data-rail="collapsed"] .accountbtn { justify-content: center; padding: 0; gap: 0; position: relative; }
+  #shell[data-rail="collapsed"] .navitem .statedot { position: absolute; right: .5rem; bottom: .55rem; box-shadow: 0 0 0 2px var(--surface); }
+  #shell[data-rail="collapsed"] .railgroup { margin-top: var(--s3); padding-top: var(--s3); border-top: 1px solid var(--line); }
+  #shell[data-rail="collapsed"] .menu { left: 0; right: auto; }
+  @media (prefers-reduced-motion: reduce) { #rail { transition: none; } }
 
   /* header */
   #topbar { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: var(--s2); min-height: var(--header); padding: 0 var(--s4); background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(12px); border-bottom: 1px solid var(--line); }
@@ -191,6 +248,38 @@
   .secitem:hover { color: var(--accent-text); }
   .secitem.active { color: var(--text); }
   .secitem.active svg:first-child { color: var(--accent-text); }
+
+  /* ---------- apps ---------- */
+  .approw { display: flex; align-items: center; gap: var(--s3); width: 100%; min-height: 3.5rem; padding: var(--s2) var(--s2); border: none; border-top: 1px solid var(--line); background: transparent; color: var(--text); font: 400 var(--fs-body)/1.4 var(--font); cursor: pointer; text-align: left; }
+  .approw:first-child { border-top: none; }
+  .approw:hover { color: var(--accent-text); }
+  .approw .grow { flex: 1; min-width: 0; }
+  .approw .n { display: block; font-weight: 600; }
+  .approw .d { display: block; font-size: var(--fs-meta); color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .approw > svg:first-child { color: var(--text-3); }
+  .apphead { display: flex; align-items: center; gap: var(--s3); margin-bottom: var(--s3); }
+  .apphead .grow { flex: 1; min-width: 0; }
+  .apphead h2 { margin: 0; }
+  .toolrow { display: flex; align-items: center; gap: var(--s3); padding: var(--s3) 0; border-top: 1px solid var(--line); }
+  .toolrow:first-child { border-top: none; }
+  .toolrow .grow { flex: 1; min-width: 0; }
+  .toolrow .n { font-weight: 500; }
+  .toolrow .d { font-size: var(--fs-meta); color: var(--text-3); }
+
+  .checkline { display: flex; align-items: center; gap: var(--s2); font-size: var(--fs-meta); color: var(--text-2); cursor: pointer; }
+  .checkline input { width: auto; min-height: 0; }
+
+  /* ---------- people ---------- */
+  .person { display: flex; align-items: center; gap: var(--s3); padding: var(--s3) 0; border-top: 1px solid var(--line); flex-wrap: wrap; }
+  .person:first-child { border-top: none; padding-top: 0; }
+  .person .grow { flex: 1; min-width: 8rem; }
+  .person .n { font-weight: 600; }
+  .person .d { font-size: var(--fs-meta); color: var(--text-3); }
+  .person .acts { display: flex; gap: var(--s2); flex-wrap: wrap; }
+  .tag { font-size: var(--fs-label); font-weight: 600; letter-spacing: .04em; text-transform: uppercase; padding: .15rem .4rem; border-radius: 5px; color: var(--text-3); background: var(--sunken); }
+  .tag.admin { color: var(--accent-text); background: var(--accent-weak); }
+  .tag.off { color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); }
+  .tag.you { color: var(--ok); background: color-mix(in srgb, var(--ok) 14%, transparent); }
 
   /* ---------- home ---------- */
   .home-head { display: flex; align-items: center; gap: var(--s3); margin-bottom: var(--s4); }
@@ -317,11 +406,15 @@
 <body>
   <div id="shell" hidden>
     <aside id="rail">
-      <div class="brand"><span class="mark"></span><span class="name">vahub</span></div>
+      <div class="brand">
+        <span class="mark"></span>
+        <span class="name">vahub</span>
+        <button class="iconbtn railtoggle" id="railToggle" type="button" aria-expanded="true" aria-controls="railnav"></button>
+      </div>
       <nav id="railnav" aria-label="Sections"></nav>
       <div class="rail-foot">
-        <span class="who" id="who"></span>
-        <button class="btn ghost small" id="logout" type="button" hidden>Sign out</button>
+        <div class="menu" id="accountMenu" role="menu" hidden></div>
+        <button class="accountbtn" id="accountBtn" type="button" aria-haspopup="menu" aria-expanded="false"></button>
       </div>
     </aside>
 
@@ -341,6 +434,8 @@
             <p>“what time is it in Tokyo?”<br />“always show me departures from Zürich HB”</p>
           </div>
         </div>
+        <section class="panel" id="apps" aria-label="Apps"></section>
+        <section class="panel" id="app" aria-label="App"></section>
         <section class="panel" id="settings" aria-label="Settings"></section>
       </main>
 
@@ -427,6 +522,13 @@
     mic: ["M12 4.4a2.4 2.4 0 0 1 2.4 2.4v4.8a2.4 2.4 0 0 1-4.8 0V6.8A2.4 2.4 0 0 1 12 4.4Z", "M6.6 11.4a5.4 5.4 0 0 0 10.8 0", "M12 16.8v3"],
     send: ["m4.5 12 15-6.5-4 6.5 4 6.5z"],
     stop: ["M7.5 7.5h9v9h-9z"],
+    sidebar: ["M4.5 4.5h15v15h-15z", "M9.8 4.5v15"],
+    user: ["M12 4.6a3.4 3.4 0 1 0 0 6.8 3.4 3.4 0 0 0 0-6.8Z", "M5.2 19.4a6.8 6.8 0 0 1 13.6 0"],
+    people: ["M9.2 4.8a3.1 3.1 0 1 0 0 6.2 3.1 3.1 0 0 0 0-6.2Z", "M3.2 19.2a6 6 0 0 1 12 0", "M16.2 5.4a3.1 3.1 0 0 1 0 6", "M17.4 13.4a6 6 0 0 1 3.4 5.8"],
+    lock: ["M6.5 10.5h11v9h-11z", "M8.8 10.5V7.9a3.2 3.2 0 0 1 6.4 0v2.6"],
+    leave: ["M13.5 5.5H6.6a1 1 0 0 0-1 1v11a1 1 0 0 0 1 1h6.9", "m17 8.5 3.5 3.5L17 15.5", "M20.5 12H10"],
+    chevronDown: ["m5.5 9.5 6.5 6.5 6.5-6.5"],
+    chevronUp: ["m5.5 14.5 6.5-6.5 6.5 6.5"],
   };
   function icon(name, cls) {
     const svg = document.createElementNS(SVG_NS, "svg");
@@ -475,12 +577,23 @@
     return false;
   }
 
+  // What went wrong, in the server's words, without ever putting a raw object on
+  // the page. 403 gets a sentence of its own: it is the one refusal a person
+  // can act on, by asking whoever runs the hub.
+  function errorText(r) {
+    if (!r) return "no answer";
+    if (r.status === 403 && r.data && r.data.detail === "admin only") return "that is for an admin";
+    const d = r.data || {};
+    return String(d.detail || d.error || r.status || "failed");
+  }
+
   const $ = function (id) { return document.getElementById(id); };
   const thread = $("thread"), empty = $("empty"), input = $("input");
   const sendBtn = $("send"), micBtn = $("mic"), readBox = $("readAloud");
   const stateEl = $("state"), voiceNote = $("voiceNote");
 
   let sessionId = null;
+  let me = {};   // /api/me: who is signed in, and whether they are an admin
   let config = { stt_provider: "browser", tts_provider: "browser" };
   const shown = new Set();
   let assistantStarted = false;
@@ -563,6 +676,20 @@
   function atBottom() { return thread.scrollHeight - thread.scrollTop - thread.clientHeight < 60; }
   function scroll(force) { if (force || atBottom()) thread.scrollTop = thread.scrollHeight; }
   function clearEmpty() { if (empty && empty.parentNode) empty.remove(); }
+
+  // Everything the last person's conversation left behind. A hub gets used on a
+  // shared tablet in a hallway, so signing out has to take the transcript with
+  // it: the bubbles are on screen, and `sessionId` would otherwise be sent with
+  // the next person's first message and append their turn to the previous
+  // account's history (a session is not bound to who created it).
+  function resetConversation() {
+    sessionId = null;
+    shown.clear();
+    thread.textContent = "";
+    if (empty) thread.appendChild(empty);
+    input.value = "";
+    setState("");
+  }
   function bubble(text, kind) {
     clearEmpty();
     const stick = atBottom();
@@ -998,7 +1125,7 @@
       if (reauthed(r)) return;
       if (!r.ok || !r.data.ok) { body.appendChild(el("div", { class: "muted", text: toolError(r) })); return; }
       const p = r.data.result || {};
-      if (p.configured === false) { body.appendChild(el("div", { class: "muted", text: "Add its token in Settings › Modules." })); return; }
+      if (p.configured === false) { body.appendChild(el("div", { class: "muted", text: "This app still needs its details, on its page under Apps." })); return; }
       if (p.error) { body.appendChild(el("div", { class: "muted", text: String(p.error) })); return; }
       const row = el("div", { class: "tiles" });
       tiles.forEach(function (t) {
@@ -1019,8 +1146,8 @@
 
   function toolError(r) {
     const why = (r.data && r.data.error) || "";
-    if (why === "unknown_module") return "Not installed. Add it in Settings › Modules.";
-    if (why === "module_not_ready" || why === "not_readonly") return "Set it up in Settings › Modules.";
+    if (why === "unknown_module") return "Not installed. Add it under Apps.";
+    if (why === "module_not_ready" || why === "not_readonly") return "Set it up on its page under Apps.";
     return "Unavailable right now.";
   }
 
@@ -1046,7 +1173,7 @@
   }
   function genericRender(body, result) {
     if (!result || typeof result !== "object") { body.appendChild(el("div", { class: "muted", text: "No data." })); return; }
-    if (result.configured === false) { body.appendChild(el("div", { class: "muted", text: "Configure this module in Settings › Modules." })); return; }
+    if (result.configured === false) { body.appendChild(el("div", { class: "muted", text: "This app still needs its details, on its page under Apps." })); return; }
     if (result.error) { body.appendChild(el("div", { class: "muted", text: String(result.error) })); return; }
     const tiles = [];
     let arr = null;
@@ -1360,7 +1487,7 @@
       });
     });
     if (!choices.length) {
-      blank(container, "Add an app and its information can live here.", "Browse apps", function () { openSettings("modules"); });
+      blank(container, "Add an app and its information can live here.", "Browse apps", function () { selectTab("apps"); });
       container.appendChild(el("div", { class: "row-actions" }, [
         el("button", { class: "btn ghost small", type: "button", text: "Close",
           onclick: function () { adderOpen = false; renderHome(); headerActions(); } }),
@@ -1500,16 +1627,25 @@
   }
 
   // ======================================================================
-  //  SETTINGS (one tab: places, schedules, modules, preferences, appearance)
+  //  SETTINGS (behind your name: places, automations, preferences, people)
   // ======================================================================
+  // Apps are NOT in here any more. They live in the sidebar, because they are
+  // places to go, not knobs to turn. What is left under your name is the
+  // household's shared data, how this page looks, and who may sign in.
   let settingsSection = null;   // null means the list of sections
   let moduleCache = null;              // installed modules, for building friendly choices
   const SECTIONS = [
     ["places", "Places", "pin", "Names for the places you talk about"],
     ["schedules", "Automations", "repeat", "Things that happen on their own"],
-    ["modules", "Apps", "grid", "What the assistant can reach"],
     ["prefs", "Preferences", "settings", "How this app looks and behaves"],
+    ["account", "Your account", "user", "Your name, and your password"],
+    // The trailing flag means: only an admin is shown this. The server refuses
+    // it either way; hiding it is so a plain user is not offered a locked door.
+    ["people", "People", "people", "Who can sign in, and what they may do", true],
   ];
+  function sections() {
+    return SECTIONS.filter(function (s) { return !s[4] || isAdmin(); });
+  }
   function openSettings(section) {
     settingsSection = section || null;
     selectTab("settings");
@@ -1519,6 +1655,10 @@
     const r = await api("GET", "/api/modules");
     if (reauthed(r)) return [];
     moduleCache = (r.ok && r.data.modules) || [];
+    // The server says whether this account may manage apps. The page uses its
+    // own is_admin to decide what to draw; this is the same answer from the
+    // other end, and the one that actually governs.
+    canManageApps = !!(r.ok && r.data.can_manage);
     return moduleCache;
   }
   // "transit.next_departures" is not something to show a person. Prefer the
@@ -1538,13 +1678,18 @@
   function renderSettings() {
     const panel = $("settings");
     panel.textContent = "";
+    // A section this account may not see is not rendered even if something
+    // asked for it (a stale menu click, a demotion mid-session).
+    if (settingsSection && !sections().some(function (s) { return s[0] === settingsSection; })) {
+      settingsSection = null;
+    }
     const layout = el("div", { class: "settings-layout" });
     layout.dataset.open = settingsSection ? "section" : "list";
 
-    // On a phone this list is the Settings screen and tapping opens one; on a
-    // desk it stays beside the section as a table of contents.
+    // On a phone this list is the You screen and tapping opens one; on a desk
+    // it stays beside the section as a table of contents.
     const list = el("nav", { class: "seclist", "aria-label": "Settings sections" });
-    SECTIONS.forEach(function (s) {
+    sections().forEach(function (s) {
       const item = el("button", { class: "secitem" + (settingsSection === s[0] ? " active" : ""), type: "button",
         onclick: function () { settingsSection = s[0]; renderSettings(); syncChrome(); } }, [
         icon(s[2]),
@@ -1559,7 +1704,13 @@
     layout.appendChild(body);
     panel.appendChild(layout);
     if (settingsSection) {
-      ({ places: renderPlaces, schedules: renderSchedules, modules: renderModules, prefs: renderPreferences }[settingsSection] || renderPlaces)(body);
+      ({
+        places: renderPlaces,
+        schedules: renderSchedules,
+        prefs: renderPreferences,
+        account: renderAccount,
+        people: renderPeople,
+      }[settingsSection] || renderPlaces)(body);
     }
     syncChrome();
   }
@@ -1675,7 +1826,7 @@
     const card = el("div", { class: "card" });
     card.appendChild(el("h2", { text: rows.length ? "Add another" : "Create your first automation" }));
     if (!choices.length) {
-      blank(card, "Install an app first, then you can automate what it does.", "Browse apps", function () { openSettings("modules"); });
+      blank(card, "Install an app first, then you can automate what it does.", "Browse apps", function () { selectTab("apps"); });
       root.appendChild(card);
       return;
     }
@@ -1750,6 +1901,19 @@
     syncWhen();
   }
 
+  // ======================================================================
+  //  APPS
+  // ======================================================================
+  // An app is a place you go, so it has a page of its own: what it is, what it
+  // can do, and (for an admin) the details it needs and the way to remove it.
+  // The list panel exists for the phone, where there is no sidebar to hold it.
+  const STATE_WORDS = { ready: "Working", unconfigured: "Needs setup", failed: "Not working", stopped: "Off", degraded: "Having trouble", starting: "Starting" };
+  function stateWord(m) { return STATE_WORDS[m && m.state] || (m && m.state) || ""; }
+  function appByName(name) {
+    return (moduleCache || []).filter(function (m) { return m.name === name; })[0] || null;
+  }
+  function openApp(name) { currentApp = name; selectTab("app"); }
+
   async function doInstall(body, errBox, btn) {
     errBox.textContent = "";
     if (body.source !== undefined && !body.source) { errBox.textContent = "Enter a source."; return; }
@@ -1758,93 +1922,183 @@
     const r = await api("POST", "/api/modules", body);
     btn.disabled = false; btn.textContent = label;
     if (!r.ok || !r.data.ok) { errBox.textContent = "That did not work: " + ((r.data && (r.data.detail || r.data.error)) || r.status); return; }
-    moduleCache = null;
-    renderSettings();
+    await loadModules(true);
+    buildRail();
+    if (r.data.name) { openApp(r.data.name); return; }
+    renderApps();
   }
-  const STATE_WORDS = { ready: "Working", unconfigured: "Needs setup", failed: "Not working", stopped: "Off", degraded: "Having trouble", starting: "Starting" };
-  function moduleCard(m) {
-    const card = el("div", { class: "card" });
-    const rm = el("button", { class: "btn small danger", type: "button", text: "Remove" });
-    rm.addEventListener("click", async function () {
-      rm.disabled = true;
-      await api("DELETE", "/api/modules/" + encodeURIComponent(m.name));
-      moduleCache = null;
-      renderSettings();
-    });
-    card.appendChild(el("div", { class: "modhead" }, [
-      icon(iconName(m.name)),
-      el("strong", { text: appName(m.name) }),
-      el("span", { class: "badge " + (m.state || ""), text: STATE_WORDS[m.state] || m.state || "" }),
-      el("span", { class: "spacer" }),
-      rm,
-    ]));
-    if (m.description) card.appendChild(el("p", { class: "sub", text: m.description }));
-    if (m.tools && m.tools.length) {
-      const names = m.tools.map(function (tool) { return humanizeWords(tool.name); }).slice(0, 5).join(" · ");
-      card.appendChild(el("p", { class: "note", text: "Can: " + names }));
-    }
-    if (m.has_policy_rule === false) {
-      card.appendChild(el("p", { class: "note", text: "You can put this on your home screen now. Letting the assistant use it on its own has to be allowed by whoever runs the hub." }));
-    }
+
+  // The details an app needs: one row per key the manifest declares. Values go
+  // in and never come back: the page only ever learns which keys are set.
+  function configSection(m, root) {
     const cfg = m.config || { required: [], optional: [], set: [] };
     const setKeys = cfg.set || [];
     const allKeys = (cfg.required || []).concat(cfg.optional || []);
-    if (allKeys.length) {
-      card.appendChild(el("p", { class: "note", text: "Details it needs. They are kept on the hub and never shown back to you." }));
-      allKeys.forEach(function (key) {
-        const isReq = (cfg.required || []).indexOf(key) !== -1;
-        const isSet = setKeys.indexOf(key) !== -1;
-        const inp = el("input", { type: "password", autocomplete: "off",
-          placeholder: isSet ? "•••••• saved — type to replace" : (isReq ? "needed" : "optional") });
-        const save = el("button", { class: "btn small", type: "button", text: "Save" });
-        const err = el("div", { class: "err" });
-        save.addEventListener("click", async function () {
-          err.textContent = "";
-          if (!inp.value) { err.textContent = "Enter a value."; return; }
-          const res = await api("PUT", "/api/modules/" + encodeURIComponent(m.name) + "/config/" + encodeURIComponent(key), { value: inp.value });
-          if (!res.ok || !res.data.ok) { err.textContent = "Could not save that: " + ((res.data && (res.data.detail || res.data.error)) || res.status); return; }
-          moduleCache = null;
-          renderSettings();
-        });
-        const row = el("div", { class: "cfgrow" }, [
-          el("span", { class: "key" + (isReq ? " req" : ""), text: humanizeKey(m.name, key) }),
-          inp, save,
-        ]);
-        if (isSet) {
-          const clear = el("button", { class: "btn small danger", type: "button", text: "Clear" });
-          clear.addEventListener("click", async function () {
-            await api("DELETE", "/api/modules/" + encodeURIComponent(m.name) + "/config/" + encodeURIComponent(key));
-            moduleCache = null;
-            renderSettings();
-          });
-          row.appendChild(clear);
-        }
-        card.appendChild(row);
-        card.appendChild(err);
+    if (!allKeys.length) return;
+    const card = el("div", { class: "card" });
+    card.appendChild(el("h2", { text: "Details it needs" }));
+    card.appendChild(el("p", { class: "note", text: "These are kept on the hub and never shown back to you." }));
+    allKeys.forEach(function (key) {
+      const isReq = (cfg.required || []).indexOf(key) !== -1;
+      const isSet = setKeys.indexOf(key) !== -1;
+      const inp = el("input", { type: "password", autocomplete: "off",
+        placeholder: isSet ? "•••••• saved — type to replace" : (isReq ? "needed" : "optional") });
+      const save = el("button", { class: "btn small", type: "button", text: "Save" });
+      const err = el("div", { class: "err" });
+      save.addEventListener("click", async function () {
+        err.textContent = "";
+        if (!inp.value) { err.textContent = "Enter a value."; return; }
+        const res = await api("PUT", "/api/modules/" + encodeURIComponent(m.name) + "/config/" + encodeURIComponent(key), { value: inp.value });
+        if (!res.ok || !res.data.ok) { err.textContent = "Could not save that: " + errorText(res); return; }
+        await loadModules(true); buildRail(); renderApp();
       });
-    }
+      const row = el("div", { class: "cfgrow" }, [
+        el("span", { class: "key" + (isReq ? " req" : ""), text: humanizeKey(m.name, key) }),
+        inp, save,
+      ]);
+      if (isSet) {
+        const clear = el("button", { class: "btn small danger", type: "button", text: "Clear" });
+        clear.addEventListener("click", async function () {
+          await api("DELETE", "/api/modules/" + encodeURIComponent(m.name) + "/config/" + encodeURIComponent(key));
+          await loadModules(true); buildRail(); renderApp();
+        });
+        row.appendChild(clear);
+      }
+      card.appendChild(row);
+      card.appendChild(err);
+    });
     if (m.missing_config && m.missing_config.length) {
       const needed = m.missing_config.map(function (k) { return humanizeKey(m.name, k); }).join(", ");
       card.appendChild(el("p", { class: "err", text: "Fill in " + needed + " to switch it on." }));
     }
-    return card;
+    root.appendChild(card);
   }
-  async function renderModules(root) {
-    root.appendChild(el("p", { class: "sub", text: "Add what the assistant can reach: your mail, your calendar, your lights. Each one only gets the details you give it." }));
-    const mods = await loadModules(true);
-    if (!mods.length) {
-      const first = el("div", { class: "card" });
-      blank(first, "Nothing added yet. Pick one below to get started.", null, null);
-      root.appendChild(first);
+
+  // One app's page.
+  async function renderApp() {
+    const panel = $("app");
+    panel.textContent = "";
+    await loadModules();
+    const m = appByName(currentApp);
+    if (!m) {
+      panel.appendChild(el("div", { class: "card" }, [
+        el("p", { class: "sub", text: "That app is not installed." }),
+      ]));
+      const back = el("button", { class: "btn", type: "button", text: "See the apps" });
+      back.addEventListener("click", function () { selectTab("apps"); });
+      panel.appendChild(el("div", { class: "row-actions" }, [back]));
+      syncChrome();
+      return;
     }
-    mods.forEach(function (m) { root.appendChild(moduleCard(m)); });
+
+    const head = el("div", { class: "apphead" }, [
+      icon(iconName(m.name), "i-lg"),
+      el("span", { class: "grow" }, [
+        el("h2", { text: appName(m.name) }),
+        el("span", { class: "meta", text: m.version ? "version " + m.version : "" }),
+      ]),
+      el("span", { class: "badge " + (m.state || ""), text: stateWord(m) }),
+    ]);
+    panel.appendChild(head);
+    if (m.description) panel.appendChild(el("p", { class: "sub", text: m.description }));
+
+    // What it can do, and a one-tap way to put a read tool on the home screen.
+    if (m.tools && m.tools.length) {
+      const card = el("div", { class: "card" });
+      card.appendChild(el("h2", { text: "What it can do" }));
+      m.tools.forEach(function (tool) {
+        const row = el("div", { class: "toolrow" }, [
+          el("span", { class: "grow" }, [
+            el("div", { class: "n", text: humanizeWords(tool.name) }),
+            el("div", { class: "d", text: firstSentence(tool.description, 120) || "" }),
+          ]),
+        ]);
+        const needs = (tool.schema && tool.schema.required) || [];
+        if (tool["class"] === "read" && !needs.length) {
+          const add = el("button", { class: "btn small", type: "button", text: "Show on Home" });
+          add.addEventListener("click", function () {
+            addToolCard(m.name, tool.name, {}, null);
+            selectTab("home");
+          });
+          row.appendChild(add);
+        }
+        card.appendChild(row);
+      });
+      panel.appendChild(card);
+    }
+
+    if (isAdmin()) {
+      configSection(m, panel);
+      if (m.has_policy_rule === false) {
+        panel.appendChild(el("p", { class: "note", text: "You can put this on your home screen now. Letting the assistant use it on its own is a policy rule, written on the hub." }));
+      }
+      if (m.last_error) panel.appendChild(el("p", { class: "err", text: String(m.last_error) }));
+      const rm = el("button", { class: "btn danger", type: "button", text: "Remove this app" });
+      const rmErr = el("div", { class: "err" });
+      rm.addEventListener("click", async function () {
+        rm.disabled = true;
+        const r = await api("DELETE", "/api/modules/" + encodeURIComponent(m.name));
+        rm.disabled = false;
+        if (!r.ok || !r.data.ok) { rmErr.textContent = "Could not remove it: " + errorText(r); return; }
+        currentApp = null;
+        await loadModules(true); buildRail(); selectTab("apps");
+      });
+      panel.appendChild(el("details", { class: "advanced" }, [
+        el("summary", { text: "Remove this app" }),
+        el("p", { class: "note", text: "Its code and the details you gave it are deleted. Cards and automations that used it stop working." }),
+        rmErr,
+        el("div", { class: "row-actions" }, [rm]),
+      ]));
+    } else if (m.state !== "ready") {
+      panel.appendChild(el("p", { class: "note", text: "This app is not working yet. Setting one up is an admin's job." }));
+    }
+    syncChrome();
+  }
+
+  // The list of apps: the phone's version of the sidebar's app section, and
+  // where an admin adds one.
+  async function renderApps() {
+    const panel = $("apps");
+    panel.textContent = "";
+    const mods = await loadModules(true);
+    buildRail();
+
+    panel.appendChild(el("p", { class: "sub", text: "What the assistant can reach: your mail, your calendar, your lights. Each one only gets the details you give it." }));
+
+    if (mods.length) {
+      const card = el("div", { class: "card" });
+      mods.forEach(function (m) {
+        const row = el("button", { class: "approw", type: "button" }, [
+          icon(iconName(m.name)),
+          el("span", { class: "grow" }, [
+            el("span", { class: "n", text: appName(m.name) }),
+            el("span", { class: "d", text: firstSentence(m.description, 90) || "" }),
+          ]),
+          el("span", { class: "badge " + (m.state || ""), text: stateWord(m) }),
+          icon("chevronRight", "i-sm"),
+        ]);
+        row.addEventListener("click", function () { openApp(m.name); });
+        card.appendChild(row);
+      });
+      panel.appendChild(card);
+    }
+
+    if (!isAdmin()) {
+      if (!mods.length) {
+        panel.appendChild(el("div", { class: "card" }, [
+          el("p", { class: "note", text: "No apps yet. An admin adds these." }),
+        ]));
+      }
+      syncChrome();
+      return;
+    }
 
     const avList = el("div");
     const src = el("input", { type: "text", placeholder: "git+https://…@tag#subdir=…, pypi:…, or ./path" });
     const srcErr = el("div", { class: "err" });
     const srcBtn = el("button", { class: "btn", type: "button", text: "Install from source" });
     srcBtn.addEventListener("click", function () { doInstall({ source: src.value.trim() }, srcErr, srcBtn); });
-    root.appendChild(el("div", { class: "card" }, [
+    panel.appendChild(el("div", { class: "card" }, [
       el("h2", { text: "Add an app" }),
       avList,
       // Installing from an arbitrary link is a power-user escape hatch, so it is
@@ -1856,8 +2110,10 @@
         el("div", { class: "row-actions" }, [srcBtn]),
       ]),
     ]));
+    syncChrome();
 
     const a = await api("GET", "/api/modules/available");
+    if (reauthed(a)) return;
     if (a.data && a.data.error) { avList.appendChild(el("p", { class: "note", text: "The app list could not be reached right now." })); return; }
     const notInstalled = ((a.ok && a.data.available) || []).filter(function (it) { return !it.installed; });
     if (!notInstalled.length) { avList.appendChild(el("p", { class: "note", text: "You already have every app on the list." })); return; }
@@ -1966,26 +2222,362 @@
     root.appendChild(adv);
   }
 
-  // ---- navigation -------------------------------------------------------
-  // One set of views, drawn twice: as a rail beside the content on a desk, and
-  // as a bar under the thumb on a phone. Never both at once, never two rows.
-  const VIEWS = [["home", "Home", "home"], ["thread", "Chat", "chat"], ["settings", "Settings", "settings"]];
-  let currentView = "home";
-  const renderers = { home: renderHome, settings: renderSettings };
+  // ======================================================================
+  //  YOUR ACCOUNT, AND PEOPLE
+  // ======================================================================
+  async function renderAccount(root) {
+    root.appendChild(el("p", { class: "sub", text: "Who you are signed in as, and how to change your password." }));
 
-  function buildNav() {
-    const rail = $("railnav"), bar = $("tabbar");
-    rail.textContent = ""; bar.textContent = "";
-    VIEWS.forEach(function (v) {
-      rail.appendChild(el("button", { class: "navitem", type: "button", "data-view": v[0],
-        onclick: function () { selectTab(v[0]); } }, [icon(v[2]), v[1]]));
-      bar.appendChild(el("button", { class: "tab", type: "button", "data-view": v[0],
-        onclick: function () { selectTab(v[0]); } }, [icon(v[2], "i-lg"), el("span", { text: v[1] })]));
+    root.appendChild(el("div", { class: "card" }, [
+      el("div", { class: "apphead" }, [
+        el("span", { class: "avatar lg", text: initials(personName()) }),
+        el("span", { class: "grow" }, [
+          el("div", null, [el("strong", { text: personName() })]),
+          el("div", { class: "meta", text: currentUser ? "@" + currentUser : "no account: the hub is behind a proxy" }),
+        ]),
+        el("span", { class: "tag" + (isAdmin() ? " admin" : ""), text: roleWord() }),
+      ]),
+      el("p", { class: "note", text: isAdmin()
+        ? "As an admin you can add apps, give them their details, and manage who else can sign in."
+        : "You can use the assistant, arrange your home screen, save places and set up automations. Adding apps and managing people is an admin's job." }),
+    ]));
+
+    if (!currentUser) return;   // login off: there is no password to change
+
+    const cur = el("input", { type: "password", autocomplete: "current-password" });
+    const next = el("input", { type: "password", autocomplete: "new-password" });
+    const again = el("input", { type: "password", autocomplete: "new-password" });
+    const err = el("div", { class: "err" });
+    const ok = el("p", { class: "note" });
+    const save = el("button", { class: "btn primary", type: "submit", text: "Change password" });
+    const form = el("form", null, [
+      el("div", { class: "grid" }, [
+        el("label", { class: "field" }, ["Current password", cur]),
+        el("label", { class: "field" }, ["New password (8+ characters)", next]),
+        el("label", { class: "field" }, ["New password again", again]),
+      ]),
+      err, ok,
+      el("div", { class: "row-actions" }, [save]),
+    ]);
+    form.addEventListener("submit", async function (e) {
+      e.preventDefault();
+      err.textContent = ""; ok.textContent = "";
+      if (next.value !== again.value) { err.textContent = "The new passwords do not match."; return; }
+      save.disabled = true;
+      const r = await api("POST", "/api/me/password", { current_password: cur.value, password: next.value });
+      save.disabled = false;
+      if (!r.ok || !r.data.ok) { err.textContent = "Could not change it: " + errorText(r); return; }
+      cur.value = next.value = again.value = "";
+      ok.textContent = "Changed. Anywhere else you were signed in has been signed out.";
     });
+    root.appendChild(el("div", { class: "card" }, [el("h2", { text: "Change your password" }), form]));
+
+    const out = el("button", { class: "btn danger", type: "button", text: "Sign out" });
+    out.addEventListener("click", signOut);
+    root.appendChild(el("div", { class: "row-actions" }, [out]));
+  }
+
+  // Only an admin is offered this, and only an admin is served it: every button
+  // below is a route the server refuses to anyone else.
+  async function renderPeople(root) {
+    root.appendChild(el("p", { class: "sub", text: "Who can sign in to this hub. An admin can add apps and manage people; everyone else can use the assistant, arrange their home screen, and set up places and automations." }));
+
+    const r = await api("GET", "/api/users");
+    if (reauthed(r)) return;
+    if (!r.ok) {
+      root.appendChild(el("div", { class: "card" }, [el("p", { class: "err", text: "Could not read the accounts: " + errorText(r) })]));
+      return;
+    }
+    const users = r.data.users || [];
+
+    const list = el("div", { class: "card" });
+    users.forEach(function (u) {
+      const isYou = u.username === currentUser;
+      const err = el("div", { class: "err" });
+      const act = async function (method, path, body, confirmText) {
+        if (confirmText && !window.confirm(confirmText)) return;
+        err.textContent = "";
+        const res = await api(method, path, body);
+        if (!res.ok || (res.data && res.data.ok === false)) { err.textContent = errorText(res); return; }
+        renderSettings();
+      };
+      const base = "/api/users/" + encodeURIComponent(u.username);
+
+      const acts = el("div", { class: "acts" });
+      if (!isYou) {
+        const role = el("button", { class: "btn small", type: "button",
+          text: u.role === "admin" ? "Make normal" : "Make admin" });
+        role.addEventListener("click", function () {
+          act("POST", base + "/role", { role: u.role === "admin" ? "user" : "admin" });
+        });
+        acts.appendChild(role);
+
+        const onoff = el("button", { class: "btn small", type: "button", text: u.disabled ? "Let back in" : "Block" });
+        onoff.addEventListener("click", function () { act("POST", base + "/enabled", { enabled: !!u.disabled }); });
+        acts.appendChild(onoff);
+
+        // The field is revealed in place rather than asked for with prompt(),
+        // which would show the password in the clear in a browser dialog.
+        const pwField = el("input", { type: "password", autocomplete: "new-password",
+          placeholder: "new password, 8+ characters", hidden: true });
+        const pwSet = el("button", { class: "btn small primary", type: "button", text: "Set", hidden: true });
+        const reset = el("button", { class: "btn small", type: "button", text: "New password" });
+        reset.addEventListener("click", function () {
+          const showing = !pwField.hidden;
+          pwField.hidden = pwSet.hidden = showing;
+          if (!showing) pwField.focus();
+        });
+        pwSet.addEventListener("click", async function () {
+          if (!pwField.value) { err.textContent = "Enter a password."; return; }
+          await act("POST", base + "/password", { password: pwField.value });
+        });
+        acts.appendChild(reset);
+        acts.appendChild(pwField);
+        acts.appendChild(pwSet);
+
+        const del = el("button", { class: "btn small danger", type: "button", text: "Remove" });
+        del.addEventListener("click", function () {
+          act("DELETE", base, undefined, "Remove the account " + u.username + "? They will not be able to sign in again.");
+        });
+        acts.appendChild(del);
+      } else {
+        acts.appendChild(el("span", { class: "meta", text: "this is you" }));
+      }
+
+      const tags = [el("span", { class: "tag" + (u.role === "admin" ? " admin" : ""), text: u.role === "admin" ? "Admin" : "Normal" })];
+      if (u.disabled) tags.push(el("span", { class: "tag off", text: "Blocked" }));
+      if (isYou) tags.push(el("span", { class: "tag you", text: "You" }));
+
+      list.appendChild(el("div", { class: "person" }, [
+        el("span", { class: "avatar", text: initials(u.display_name || u.username) }),
+        el("span", { class: "grow" }, [
+          el("div", { class: "n", text: u.display_name || u.username }),
+          el("div", { class: "d", text: "@" + u.username }),
+        ]),
+      ].concat(tags, [acts])));
+      list.appendChild(err);
+    });
+    root.appendChild(list);
+
+    // ---- add someone ------------------------------------------------------
+    const name = el("input", { type: "text", autocomplete: "off", placeholder: "ben" });
+    const display = el("input", { type: "text", autocomplete: "off", placeholder: "Ben" });
+    const pass = el("input", { type: "password", autocomplete: "new-password", placeholder: "8+ characters" });
+    const admin = el("input", { type: "checkbox", "aria-label": "Make them an admin" });
+    const err = el("div", { class: "err" });
+    const save = el("button", { class: "btn primary", type: "submit", text: "Add them" });
+    const form = el("form", null, [
+      el("div", { class: "grid" }, [
+        el("label", { class: "field" }, ["Username (lowercase)", name]),
+        el("label", { class: "field" }, ["Name to show (optional)", display]),
+        el("label", { class: "field full" }, ["A password to start with", pass]),
+      ]),
+      el("label", { class: "checkline" }, [admin, "Make them an admin (apps and people)"]),
+      err,
+      el("div", { class: "row-actions" }, [save]),
+    ]);
+    form.addEventListener("submit", async function (e) {
+      e.preventDefault();
+      err.textContent = "";
+      save.disabled = true;
+      const res = await api("POST", "/api/users", {
+        username: name.value.trim(),
+        password: pass.value,
+        display_name: display.value.trim() || null,
+        role: admin.checked ? "admin" : "user",
+      });
+      save.disabled = false;
+      if (!res.ok || !res.data.ok) { err.textContent = "Could not add them: " + errorText(res); return; }
+      renderSettings();
+    });
+    root.appendChild(el("div", { class: "card" }, [
+      el("h2", { text: "Add someone" }),
+      el("p", { class: "note", text: "Give them a password here, then let them change it under Your account." }),
+      form,
+    ]));
+    root.appendChild(el("p", { class: "note", text: "Accounts can also be managed on the hub with `vahub user`, which is the way back in if nobody can sign in." }));
+  }
+
+  // ---- navigation -------------------------------------------------------
+  // Two fixed places (Home, Chat) and then your apps, drawn as a rail beside
+  // the content on a desk and as a bar under the thumb on a phone. The rail
+  // collapses to icons; the bar cannot, so the phone gets an Apps screen and a
+  // You screen instead of a sidebar it has no room for.
+  const MAIN_VIEWS = [["home", "Home", "home"], ["thread", "Chat", "chat"]];
+  const TABS = [
+    ["home", "Home", "home"], ["thread", "Chat", "chat"],
+    ["apps", "Apps", "grid"], ["settings", "You", "user"],
+  ];
+  let currentView = "home";
+  let currentApp = null;      // which app's page, when currentView is "app"
+  let canManageApps = false;  // what the server said the last time we asked
+  const renderers = { home: renderHome, settings: renderSettings, apps: renderApps, app: renderApp };
+
+  function isAdmin() { return !!(me && me.is_admin); }
+
+  // Whether a rail entry is the one you are looking at. An app entry is only
+  // active for its own app, which is why this is not a plain [data-view] sweep.
+  function viewIsApps() { return currentView === "apps" || currentView === "app"; }
+
+  function buildRail() {
+    const rail = $("railnav");
+    rail.textContent = "";
+    MAIN_VIEWS.forEach(function (v) {
+      rail.appendChild(el("button", {
+        class: "navitem" + (currentView === v[0] ? " active" : ""),
+        type: "button", title: v[1],
+        onclick: function () { selectTab(v[0]); },
+      }, [icon(v[2]), el("span", { class: "label", text: v[1] })]));
+    });
+
+    const group = el("div", { class: "railgroup" });
+    const label = el("button", {
+      class: "navitem", type: "button", title: "All apps",
+      onclick: function () { selectTab("apps"); },
+    }, [icon("grid"), el("span", { class: "label", text: "Apps" })]);
+    label.classList.toggle("active", currentView === "apps");
+    group.appendChild(label);
+
+    const apps = moduleCache || [];
+    apps.forEach(function (m) {
+      group.appendChild(el("button", {
+        class: "navitem" + (currentView === "app" && currentApp === m.name ? " active" : ""),
+        type: "button", title: appName(m.name) + " — " + stateWord(m),
+        onclick: function () { openApp(m.name); },
+      }, [
+        icon(iconName(m.name)),
+        el("span", { class: "label", text: appName(m.name) }),
+        el("span", { class: "statedot " + (m.state || ""), "aria-hidden": "true" }),
+      ]));
+    });
+    if (!apps.length) {
+      group.appendChild(el("p", { class: "railnote", text: isAdmin() ? "None yet — add one." : "None yet." }));
+    }
+    if (isAdmin()) {
+      group.appendChild(el("button", {
+        class: "navitem add", type: "button", title: "Add an app",
+        onclick: function () { selectTab("apps"); },
+      }, [icon("plus"), el("span", { class: "label", text: "Add an app" })]));
+    }
+    rail.appendChild(group);
+  }
+
+  function buildTabbar() {
+    const bar = $("tabbar");
+    bar.textContent = "";
+    TABS.forEach(function (v) {
+      const active = v[0] === "apps" ? viewIsApps() : currentView === v[0];
+      bar.appendChild(el("button", {
+        class: "tab" + (active ? " active" : ""), type: "button",
+        onclick: function () { v[0] === "settings" ? openSettings(null) : selectTab(v[0]); },
+      }, [icon(v[2], "i-lg"), el("span", { text: v[1] })]));
+    });
+  }
+
+  // ---- the sidebar's width ----------------------------------------------
+  // Kept in this browser rather than in the hub's settings: those settings are
+  // shared by everyone with an account, and how wide you like your sidebar is
+  // nobody else's business. It is also read before the first paint, so the rail
+  // does not start wide and then jump.
+  const RAIL_KEY = "vahub:rail";
+  let railCollapsed = false;
+  function readRail() {
+    try { railCollapsed = window.localStorage.getItem(RAIL_KEY) === "collapsed"; }
+    catch (e) { railCollapsed = false; }   // private window, or storage refused
+  }
+  function applyRail() {
+    $("shell").dataset.rail = railCollapsed ? "collapsed" : "open";
+    const btn = $("railToggle");
+    const what = railCollapsed ? "Expand sidebar" : "Collapse sidebar";
+    btn.setAttribute("aria-expanded", railCollapsed ? "false" : "true");
+    btn.setAttribute("aria-label", what);
+    btn.title = what;
+  }
+  function toggleRail() {
+    railCollapsed = !railCollapsed;
+    try { window.localStorage.setItem(RAIL_KEY, railCollapsed ? "collapsed" : "open"); }
+    catch (e) { /* not remembering it is survivable */ }
+    applyRail();
+    if (menuOpen) closeMenu();
+  }
+
+  // ---- your name, and everything behind it ------------------------------
+  let menuOpen = false;
+  function personName() { return (me && me.display_name) || currentUser || "Signed in"; }
+  function initials(name) {
+    const parts = String(name || "").trim().split(/[\s._-]+/).filter(Boolean);
+    if (!parts.length) return "?";
+    return (parts[0].charAt(0) + (parts.length > 1 ? parts[parts.length - 1].charAt(0) : "")).slice(0, 2);
+  }
+  function roleWord() {
+    if (!me || me.auth === false) return "Operator";
+    return isAdmin() ? "Admin" : "Signed in";
+  }
+  function buildAccount() {
+    const btn = $("accountBtn");
+    btn.textContent = "";
+    btn.appendChild(el("span", { class: "avatar", text: initials(personName()) }));
+    btn.appendChild(el("span", { class: "who", text: personName() }));
+    btn.appendChild(icon(menuOpen ? "chevronDown" : "chevronUp", "i-sm"));
+    btn.setAttribute("aria-expanded", menuOpen ? "true" : "false");
+    btn.title = personName() + " — " + roleWord();
+  }
+  function closeMenu() { menuOpen = false; $("accountMenu").hidden = true; buildAccount(); }
+  function openMenu() {
+    menuOpen = true;
+    const menu = $("accountMenu");
+    menu.textContent = "";
+    menu.hidden = false;
+    menu.appendChild(el("div", { class: "menuhead" }, [
+      el("span", { class: "n", text: personName() }),
+      el("span", { class: "r", text: roleWord() }),
+    ]));
+    sections().forEach(function (sec) {
+      const item = el("button", { class: "menuitem", type: "button", role: "menuitem" },
+        [icon(sec[2], "i-sm"), el("span", { text: sec[1] })]);
+      item.addEventListener("click", function () { closeMenu(); openSettings(sec[0]); });
+      menu.appendChild(item);
+    });
+    if (me && me.auth !== false) {
+      menu.appendChild(el("div", { class: "menusep" }));
+      const out = el("button", { class: "menuitem leave", type: "button", role: "menuitem" },
+        [icon("leave", "i-sm"), el("span", { text: "Sign out" })]);
+      out.addEventListener("click", function () { closeMenu(); signOut(); });
+      menu.appendChild(out);
+    }
+    buildAccount();
+  }
+  function toggleMenu() { menuOpen ? closeMenu() : openMenu(); }
+
+  // Built once: the handlers and the icons that never change.
+  let chromeBuilt = false;
+  function buildChrome() {
+    if (chromeBuilt) return;
+    chromeBuilt = true;
+    $("railToggle").appendChild(icon("sidebar"));
+    $("railToggle").addEventListener("click", toggleRail);
+    $("accountBtn").addEventListener("click", function (e) { e.stopPropagation(); toggleMenu(); });
     $("backBtn").appendChild(icon("chevronLeft"));
-    $("backBtn").addEventListener("click", function () { settingsSection = null; renderSettings(); });
+    $("backBtn").addEventListener("click", goBack);
     $("mic").appendChild(icon("mic"));
     $("send").appendChild(icon("send"));
+    // A menu that only closes on its own items is a menu you fight with.
+    document.addEventListener("click", function (e) {
+      if (!menuOpen) return;
+      const foot = $("accountMenu").parentNode;
+      if (!foot.contains(e.target)) closeMenu();
+    });
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape" && menuOpen) closeMenu();
+    });
+  }
+
+  // The back arrow is the phone's way out of a section or an app page.
+  function goBack() {
+    if (currentView === "app") { selectTab("apps"); return; }
+    settingsSection = null;
+    renderSettings();
+    syncChrome();
   }
 
   // The header title and the back arrow depend on where you are, so they are
@@ -1998,19 +2590,32 @@
       onclick: function () { adderOpen = !adderOpen; renderHome(); headerActions(); } },
       [icon(adderOpen ? "x" : "plus", "i-sm"), adderOpen ? "Close" : "Add card"]));
   }
+  function viewTitle() {
+    if (currentView === "app") {
+      const m = appByName(currentApp);
+      return m ? appName(m.name) : "App";
+    }
+    if (currentView === "apps") return "Apps";
+    if (currentView === "settings") {
+      const section = settingsSection ? sectionDef(settingsSection) : null;
+      return section ? section[1] : "You";
+    }
+    const view = MAIN_VIEWS.filter(function (v) { return v[0] === currentView; })[0];
+    return view ? view[1] : "";
+  }
   function syncChrome() {
-    const view = VIEWS.filter(function (v) { return v[0] === currentView; })[0];
-    const section = currentView === "settings" && settingsSection ? sectionDef(settingsSection) : null;
-    $("viewTitle").textContent = section ? section[1] : (view ? view[1] : "");
-    $("backBtn").dataset.show = section ? "1" : "0";
-    document.querySelectorAll("[data-view]").forEach(function (b) {
-      b.classList.toggle("active", b.dataset.view === currentView);
-    });
+    $("viewTitle").textContent = viewTitle();
+    const deep = currentView === "app" || (currentView === "settings" && !!settingsSection);
+    $("backBtn").dataset.show = deep ? "1" : "0";
+    buildRail();
+    buildTabbar();
+    buildAccount();
     headerActions();
   }
 
   function selectTab(name) {
     currentView = name;
+    if (menuOpen) closeMenu();
     document.querySelectorAll("main .panel").forEach(function (p) { p.classList.toggle("active", p.id === name); });
     $("composerBar").hidden = name !== "thread";
     if (name !== "home") stopClock();
@@ -2021,17 +2626,23 @@
 
   // ---- auth gate --------------------------------------------------------
   const gate = $("gate"), gateBody = $("gateBody");
-  async function showApp(me) {
+  async function showApp(who) {
     signedOut = false;
-    currentUser = (me && me.username) || null;
-    dashCards = null; adderOpen = false; settingsSection = null; moduleCache = null;
+    me = who || {};
+    currentUser = me.username || null;
+    dashCards = null; adderOpen = false; settingsSection = null;
+    moduleCache = null; currentApp = null; canManageApps = false;
+    resetConversation();
     gate.classList.remove("active");
     $("shell").hidden = false;
-    buildNav();
-    if (me && me.username) { $("who").textContent = me.username; $("logout").hidden = false; }
-    // Load the saved look and preferences before painting, so the first frame is
-    // already the right theme and the right starting page.
+    buildChrome();
+    applyRail();
+    // Load the saved look, the preferences and the app list before painting, so
+    // the first frame is already the right theme, the right starting page and a
+    // sidebar with your apps in it.
     await loadDash();
+    if (signedOut) return;
+    await loadModules(true);
     if (signedOut) return;
     selectTab(prefs.startPage === "thread" ? "thread" : "home");
     startAssistant();
@@ -2042,6 +2653,7 @@
     if (signedOut) return;
     signedOut = true;
     if (socket) { try { socket.close(); } catch (e) { /* gone */ } socket = null; }
+    resetConversation();
     renderLogin();
     showGate();
   }
@@ -2101,24 +2713,35 @@
     gateBody.appendChild(form);
     user.focus();
   }
-  $("logout").addEventListener("click", async function () {
+  async function signOut() {
     signedOut = true;
     if (socket) { try { socket.close(); } catch (e) { /* gone */ } socket = null; }
-    await api("POST", "/api/logout");
+    // Wipe the screen before the round trip, not after: whoever is standing
+    // there should not be able to read the last conversation while the request
+    // is in flight, and a failed logout must not leave it on display either.
+    resetConversation();
+    me = {};
+    currentUser = null;
+    dashCards = null; moduleCache = null; currentApp = null;
+    canManageApps = false; settingsSection = null;
+    $("settings").textContent = ""; $("apps").textContent = ""; $("app").textContent = "";
     renderLogin();
     showGate();
-  });
+    await api("POST", "/api/logout");
+  }
 
   async function boot() {
     const r = await api("GET", "/api/me");
     if (!r.ok) { dropToLogin(); return; }
-    const me = r.data || {};
-    if (me.auth === false || me.authenticated) { showApp(me); return; }
-    if (me.setup_required) renderSetup(); else renderLogin();
+    const who = r.data || {};
+    if (who.auth === false || who.authenticated) { showApp(who); return; }
+    if (who.setup_required) renderSetup(); else renderLogin();
     showGate();
   }
 
   applyAccent(DEFAULT_ACCENT);
+  readRail();
+  applyRail();
   boot();
 })();
 </script>

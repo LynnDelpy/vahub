@@ -47,8 +47,11 @@ web:
     - https://hub.example.lan:8443
 
   # The hub's built-in login. On by default, so a browser-reachable hub is not
-  # open. Create an account with `vahub user add`; the hub never sets a password
-  # for you. Turn it off only when a reverse proxy in front already authenticates.
+  # open. Create an account with `vahub user add` (add --admin for one that can
+  # install apps and manage accounts; the first account is an admin either way);
+  # the hub never sets a password for you. Turn it off only when a reverse proxy
+  # in front already authenticates, and note that with it off there are no
+  # accounts and so no roles: everyone the proxy lets in is an operator.
   auth:
     enabled: true
     session_ttl_s: 1209600   # two weeks

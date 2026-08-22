@@ -678,7 +678,9 @@ def _render_config(
             },
         ),
         "# The built-in login is on by default: open the page and create the first\n"
-        "# account (it becomes the owner), or use `vahub user add`. On 127.0.0.1 only\n"
+        "# account (it becomes the owner and the first admin), or use `vahub user add`.\n"
+        "# An admin can install apps and manage accounts; other accounts cannot.\n"
+        "# On 127.0.0.1 only\n"
         "# this machine can reach the hub; on any other address, also put an\n"
         "# authenticating reverse proxy in front of it. origin_allowlist is checked on\n"
         '# API calls and on WebSocket handshakes; "*" turns that check off.\n'

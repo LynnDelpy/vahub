@@ -75,6 +75,8 @@ async def test_page_and_me_are_reachable_without_login(client) -> None:
         "authenticated": False,
         "username": None,
         "display_name": None,
+        "role": None,
+        "is_admin": False,
     }
 
 
@@ -180,15 +182,27 @@ async def test_module_management_and_tool_calls_require_login(client) -> None:
     assert (await client.post("/api/tools/fake/echo", json={"args": {}})).status_code == 401
 
 
+async def test_account_management_requires_login_before_it_requires_a_role(client) -> None:
+    """The role check is inside the handler, so it would be reached by an
+    unauthenticated caller if the login middleware ever stopped covering these
+    paths. 401, not 403: nobody is signed in yet."""
+    assert (await client.get("/api/users")).status_code == 401
+    assert (await client.post("/api/users", json={"username": "eve", "password": "x" * 12})).status_code == 401
+    assert (await client.delete("/api/users/lynn")).status_code == 401
+    assert (
+        await client.post("/api/me/password", json={"current_password": "a", "password": "b" * 12})
+    ).status_code == 401
+
+
 def test_throttle_prunes_empty_buckets_and_stays_bounded() -> None:
     # The login path calls locked() before record_failure() for the same key, so
     # locked() must not persist an empty bucket, or the max_keys eviction becomes
     # dead code and the map grows one entry per attempted username forever.
     import time
 
-    from vahub.web.auth import _Throttle
+    from vahub.web.auth import Throttle
 
-    t = _Throttle(limit=5, window_s=300.0, max_keys=8)
+    t = Throttle(limit=5, window_s=300.0, max_keys=8)
     now = time.time()
     for i in range(50):
         assert t.locked(f"ghost{i}", now) is False  # never-failing usernames

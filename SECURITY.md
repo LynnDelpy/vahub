@@ -72,6 +72,25 @@ built-in login (named accounts, on by default) and can instead sit behind an
 authenticating proxy. Whoever writes `vahub.yaml` or runs the CLI on the host can
 grant anything; the login only decides who may use the web interface.
 
+An account holds one of two roles, and the difference is worth stating because
+it is the only privilege boundary inside the web interface:
+
+* **admin** may install, configure and remove modules, and may create, disable
+  and remove accounts. Installing runs code you chose on the host, and
+  configuring hands that code a credential, so these are the two most
+  consequential things a browser can do here.
+* **user** may talk to the assistant, arrange the dashboard, read a module's
+  read-declared tools, approve a held-back action, and edit the places and
+  schedules the household shares.
+
+The first account is an admin, because otherwise nobody could create the second.
+The role is read from the account on every request, so a demotion or a disable
+takes effect on the next request rather than when a cookie expires, and the hub
+refuses the change that would leave no admin able to sign in. Neither role can
+edit the policy or grant the assistant a capability; that is still `vahub.yaml`.
+With `web.auth.enabled` off there are no accounts, so there are no roles: the
+proxy decided who may reach the hub and everyone who does is an operator.
+
 ## What the gate does
 
 * **Default deny.** A tool with no rule in `policy.rules` is refused. Adding a
@@ -129,12 +148,20 @@ grant anything; the login only decides who may use the web interface.
   `web.auth_subject_header` records who a proxy says is acting; it is an audit
   field, never an authorization input, because a header is trivially forged by
   anyone who reaches the port directly.
-* **Operator surface on the host, not the web.** The web serves the assistant
-  and a signed-in owner's own settings (saved places, preferences, schedules).
-  Module state, module stderr, the tool catalogue and the audit log are read
-  with the CLI (`vahub doctor`, `vahub audit`, `vahub module verify`), which
-  needs shell access. The UI and the assistant edit saved data only; the policy
-  and the accounts stay file/CLI-only.
+* **Operator surface on the host, not the web.** Module stderr, the tool
+  catalogue and the audit log are read with the CLI (`vahub doctor`,
+  `vahub audit`, `vahub module verify`), which needs shell access. Modules and
+  accounts are also manageable from the browser by an **admin**; the policy is
+  not, and no role can grant the assistant a capability. A plain user's view of
+  a module carries its name, state and tools, not its configuration keys, its
+  last error, or whether policy allows it.
+* **A compromised admin session is a compromised hub.** An admin can install a
+  module, which is arbitrary code on the host. That was already true of the CLI
+  and of `vahub.yaml`; making it reachable from a browser means the admin's
+  session cookie now stands in front of it. That is why an admin's own password
+  change requires the current password, why the role check is re-read from the
+  database on every request, and why plain accounts exist at all: give the
+  household `user` accounts and keep `admin` for whoever runs the hub.
 * **Denial of service and cost.** The budgets bound one turn (iterations, tool
   result bytes, tokens, wall clock). They keep a loop from becoming an
   unbounded bill. They are not a defence against someone who can reach the API

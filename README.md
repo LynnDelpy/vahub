@@ -47,24 +47,35 @@ vahub start         # writes a starter config if none exists, then runs
 
 `vahub start` binds loopback with a deny policy and the mock model, so a fresh install starts, needs no
 credentials, and can do nothing dangerous. Open `http://127.0.0.1:8080`, create the first account (it
-becomes the owner), and do the rest from the browser: add modules, give them their tokens, and arrange
-your dashboard. Point the `llm` section at a real model, then add policy rules for what you want the
-assistant to do. (`vahub init` plus `vahub run` is the same thing spread across a wizard and a service
-manager, if you prefer that.)
+becomes the owner and the first admin), and do the rest from the browser: add modules, give them their
+tokens, arrange your dashboard, and add accounts for everyone else in the house. Point the `llm` section
+at a real model, then add policy rules for what you want the assistant to do. (`vahub init` plus
+`vahub run` is the same thing spread across a wizard and a service manager, if you prefer that.)
 
 ## The web page
 
-Behind a login (built in, on by default): tabs for **Chat**, **Locations**, **Settings**, **Schedules**
-and **Modules**, plus a **Home** dashboard of cards you arrange. Chat is a text box, a microphone, and a
-card that appears when a destructive action needs your approval. You can save places, set preferences,
-create cron routines, and install and configure modules by hand; the assistant can do the same through
-gated tools. Dashboard cards (GitHub, GitLab, email, ...) read a module's own data by calling its
-read-only tools directly, which the owner may do without a policy rule. Operator concerns (stderr, the
-audit log) stay on the CLI (`vahub doctor`, `vahub audit`).
+Behind a login (built in, on by default). A sidebar you can collapse to a strip of icons holds where you
+can go: **Home**, a dashboard of cards you arrange; **Chat**, a text box, a microphone and a card that
+appears when a destructive action needs your approval; and then your **apps**, one entry each, with a dot
+for whether it is working. Each app has a page of its own: what it is, what it can do, and the details it
+needs. Your name sits at the bottom of the sidebar, and everything about you and the household hangs off
+it: places, automations, preferences, your password, and (for an admin) the people who can sign in.
+Dashboard cards read a module's own data by calling its read-only tools directly, which a signed-in
+person may do without a policy rule. Operator concerns (stderr, the audit log) stay on the CLI
+(`vahub doctor`, `vahub audit`).
+
+### Two kinds of account
+
+An **admin** can install and configure apps and manage accounts. Everyone else can talk to the assistant,
+arrange the dashboard, approve a held-back action, and edit the places and automations the household
+shares, but cannot install an app, hand one a token, or touch accounts. The first account is an admin;
+`vahub user add <name>` makes a plain one and `--admin` makes another admin. The hub will not let you
+remove the last admin who can sign in from the web, and `vahub user` on the host is the way back in if
+you manage it anyway.
 
 Installing a module from the UI never grants it permission: its tools stay denied until you add a policy
 rule in `vahub.yaml`, which is a file-and-CLI action. So the assistant can never install itself a
-capability, and neither policy nor accounts are editable from the web.
+capability, and the policy is not editable from the web by anyone, of any role.
 
 ## The policy gate
 
@@ -114,8 +125,9 @@ configuration, security, CLI, writing modules, deployment, FAQ). An annotated co
 
 ## Known limits
 
-The built-in login or a reverse proxy is the only authentication; module isolation is a process
-boundary and a uid, not a sandbox; policy rules are written by hand (the boundary is the file, not a UI);
+The built-in login or a reverse proxy is the only authentication, and its roles are two (admin and user),
+not a permission system; module isolation is a process boundary and a uid, not a sandbox; policy rules
+are written by hand (the boundary is the file, not a UI);
 conversation memory is shallow and resets on restart; replies are not streamed; there is no wake word and
 no clustering.
 

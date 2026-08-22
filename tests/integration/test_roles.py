@@ -198,9 +198,7 @@ async def test_a_refusal_does_not_depend_on_the_module_existing(plain) -> None:
 # managing accounts
 # --------------------------------------------------------------------------
 async def test_an_admin_creates_an_account_and_it_can_sign_in(rt, admin) -> None:
-    r = await admin.post(
-        "/api/users", json={"username": "ben", "password": PASSWORD, "display_name": "Ben"}
-    )
+    r = await admin.post("/api/users", json={"username": "ben", "password": PASSWORD, "display_name": "Ben"})
     assert r.status_code == 200, r.text
     assert r.json()["user"] == {
         "username": "ben",

@@ -187,7 +187,9 @@ async def test_account_management_requires_login_before_it_requires_a_role(clien
     unauthenticated caller if the login middleware ever stopped covering these
     paths. 401, not 403: nobody is signed in yet."""
     assert (await client.get("/api/users")).status_code == 401
-    assert (await client.post("/api/users", json={"username": "eve", "password": "x" * 12})).status_code == 401
+    assert (
+        await client.post("/api/users", json={"username": "eve", "password": "x" * 12})
+    ).status_code == 401
     assert (await client.delete("/api/users/lynn")).status_code == 401
     assert (
         await client.post("/api/me/password", json={"current_password": "a", "password": "b" * 12})

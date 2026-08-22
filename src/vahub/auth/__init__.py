@@ -22,11 +22,36 @@ from .passwords import hash_password, needs_rehash, verify_password
 USERNAME_RE = re.compile(r"^[a-z0-9][a-z0-9_.-]{1,31}$")
 MIN_PASSWORD_LEN = 8
 
+# The two roles an account can hold, and what each is for.
+#
+# `admin` may do everything the web interface offers, which includes installing
+# an app and giving it a token. That is a code-execution decision and a
+# credential decision, so it is the boundary worth having.
+#
+# `user` may use the assistant: chat, speak, arrange the dashboard, read a
+# module's read-only tools, approve a held-back action, and edit the places and
+# schedules the household shares. It may not install, configure or remove an
+# app, and it may not see or change accounts.
+#
+# Neither role can edit the policy or grant the assistant a capability: that is
+# still vahub.yaml, which is a file on the host and not reachable from a browser
+# at all.
+ROLE_ADMIN = "admin"
+ROLE_USER = "user"
+ROLES = (ROLE_ADMIN, ROLE_USER)
+
 
 def username_error(username: str) -> str | None:
     """None if the username is valid, else a one-line reason it is not."""
     if not USERNAME_RE.match(username):
         return "username must be 2-32 chars: a lowercase letter or digit, then a-z 0-9 . _ -"
+    return None
+
+
+def role_error(role: str) -> str | None:
+    """None if the role is one the hub knows, else a one-line reason it is not."""
+    if role not in ROLES:
+        return f"role must be one of: {', '.join(ROLES)}"
     return None
 
 
@@ -39,10 +64,14 @@ def password_error(password: str) -> str | None:
 
 __all__ = [
     "MIN_PASSWORD_LEN",
+    "ROLES",
+    "ROLE_ADMIN",
+    "ROLE_USER",
     "USERNAME_RE",
     "hash_password",
     "needs_rehash",
     "password_error",
+    "role_error",
     "username_error",
     "verify_password",
 ]

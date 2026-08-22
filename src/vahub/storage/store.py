@@ -184,7 +184,23 @@ _V3: tuple[str, ...] = (
     """,
 )
 
-MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = ((1, _V1), (2, _V2), (3, _V3))
+# v4: account roles. Until now every account had identical rights, which is fine
+# for one person and wrong for a household: whoever can sign in can install a
+# module and hand it a token. An `admin` may do everything the web offers; a
+# plain `user` may talk to the assistant, arrange the dashboard, approve a
+# confirmation, and edit places and schedules, but may not install or configure
+# an app, and may not touch accounts.
+#
+# Accounts that already exist when this migration runs become admins. They were
+# created under the old rule, where signing in meant full rights, so demoting
+# them silently would take away something the operator had already granted;
+# `vahub user role <name> user` is how you narrow that down deliberately.
+_V4: tuple[str, ...] = (
+    "ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'user'",
+    "UPDATE users SET role = 'admin'",
+)
+
+MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = ((1, _V1), (2, _V2), (3, _V3), (4, _V4))
 
 SCHEMA_VERSION = MIGRATIONS[-1][0]
 
@@ -511,11 +527,13 @@ class Store:
         return int(row["tokens"]) if row else 0
 
     # --- accounts ---------------------------------------------------------
-    async def create_user(self, username: str, password_hash: str, display_name: str | None) -> None:
+    async def create_user(
+        self, username: str, password_hash: str, display_name: str | None, role: str = "user"
+    ) -> None:
         await self.db.execute(
-            "INSERT INTO users(username, password_hash, display_name, created_at, disabled)"
-            " VALUES(?,?,?,?,0)",
-            (username, password_hash, display_name, time.time()),
+            "INSERT INTO users(username, password_hash, display_name, created_at, disabled, role)"
+            " VALUES(?,?,?,?,0,?)",
+            (username, password_hash, display_name, time.time(), role),
         )
 
     async def create_first_user(self, username: str, password_hash: str, display_name: str | None) -> bool:
@@ -525,10 +543,13 @@ class Store:
         The web setup ("first visitor claims it") checks for zero accounts and
         then inserts, and those two steps must be one indivisible action, or two
         visitors racing at first run could both create an owner. The insert only
-        fires WHERE NOT EXISTS any user, so exactly one caller wins."""
+        fires WHERE NOT EXISTS any user, so exactly one caller wins.
+
+        The owner is an admin: somebody has to be able to add the second
+        account, and at this point there is nobody else."""
         cur = await self.db.execute(
-            "INSERT INTO users(username, password_hash, display_name, created_at, disabled)"
-            " SELECT ?,?,?,?,0 WHERE NOT EXISTS (SELECT 1 FROM users)",
+            "INSERT INTO users(username, password_hash, display_name, created_at, disabled, role)"
+            " SELECT ?,?,?,?,0,'admin' WHERE NOT EXISTS (SELECT 1 FROM users)",
             (username, password_hash, display_name, time.time()),
         )
         return bool(cur.rowcount)
@@ -540,7 +561,7 @@ class Store:
 
     async def list_users(self) -> list[dict[str, Any]]:
         cur = await self.db.execute(
-            "SELECT username, display_name, created_at, disabled FROM users ORDER BY username"
+            "SELECT username, display_name, created_at, disabled, role FROM users ORDER BY username"
         )
         return [dict(row) for row in await cur.fetchall()]
 
@@ -564,6 +585,31 @@ class Store:
         )
         return bool(cur.rowcount)
 
+    async def set_display_name(self, username: str, display_name: str | None) -> bool:
+        cur = await self.db.execute(
+            "UPDATE users SET display_name=? WHERE username=?", (display_name, username)
+        )
+        return bool(cur.rowcount)
+
+    async def set_user_role(self, username: str, role: str) -> bool:
+        cur = await self.db.execute("UPDATE users SET role=? WHERE username=?", (role, username))
+        return bool(cur.rowcount)
+
+    async def count_admins(self, *, excluding: str | None = None) -> int:
+        """How many accounts can still administer the hub: admins that are not
+        disabled, optionally ignoring one name.
+
+        The caller uses this to refuse the change that would leave nobody able
+        to add an account or configure an app from the web. It counts enabled
+        admins only, because a disabled admin cannot sign in and so cannot undo
+        the mistake either."""
+        cur = await self.db.execute(
+            "SELECT COUNT(*) AS n FROM users WHERE role='admin' AND disabled=0 AND username IS NOT ?",
+            (excluding,),
+        )
+        row = await cur.fetchone()
+        return int(row["n"]) if row else 0
+
     async def delete_user(self, username: str) -> bool:
         await self.db.execute("DELETE FROM sessions WHERE username=?", (username,))
         cur = await self.db.execute("DELETE FROM users WHERE username=?", (username,))
@@ -576,16 +622,27 @@ class Store:
             (sid, username, time.time(), expires_at),
         )
 
-    async def session_user(self, sid: str) -> str | None:
-        """The username for a live, unexpired session, or None. A disabled
-        account's sessions never resolve, so revoking access is immediate."""
+    async def session_identity(self, sid: str) -> dict[str, Any] | None:
+        """Who a live session belongs to, and what they are allowed to be:
+        `{username, display_name, role}`, or None.
+
+        The role is read from the account on every request rather than being
+        copied into the session at login, so a demotion or a disable takes
+        effect on the next request instead of when the cookie happens to
+        expire. A disabled account's sessions never resolve at all."""
         cur = await self.db.execute(
-            "SELECT s.username FROM sessions s JOIN users u ON u.username = s.username"
+            "SELECT s.username, u.display_name, u.role FROM sessions s"
+            " JOIN users u ON u.username = s.username"
             " WHERE s.id=? AND s.expires_at > ? AND u.disabled=0",
             (sid, time.time()),
         )
         row = await cur.fetchone()
-        return str(row["username"]) if row else None
+        return dict(row) if row else None
+
+    async def session_user(self, sid: str) -> str | None:
+        """The username for a live, unexpired session, or None."""
+        identity = await self.session_identity(sid)
+        return str(identity["username"]) if identity else None
 
     async def delete_session(self, sid: str) -> None:
         await self.db.execute("DELETE FROM sessions WHERE id=?", (sid,))

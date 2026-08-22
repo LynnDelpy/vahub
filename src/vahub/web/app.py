@@ -27,7 +27,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response
 
 from ..__about__ import __version__
 from ..core import metrics
-from . import api, manage, ws
+from . import api, manage, users, ws
 from . import auth as web_auth
 from . import modules as web_modules
 from .security import check_origin
@@ -102,12 +102,16 @@ def create_app(rt: Runtime) -> FastAPI:
         # When the built-in login is on, every route but the page shell, the
         # health probes, /api/me and /api/login needs a valid session. The page
         # itself loads unauthenticated so its script can show a login form.
-        if (
-            rt.config.web.auth.enabled
-            and not web_auth.is_public_path(request.url.path)
-            and await web_auth.current_username(request, rt) is None
-        ):
-            return JSONResponse({"ok": False, "error": "auth_required"}, status_code=401)
+        #
+        # Resolving the identity here also memoises it on the request, so a
+        # handler that needs to know who is calling (or whether they are an
+        # admin) does not query the one shared connection a second time.
+        # A public path is not resolved here at all: /health and /ready are
+        # polled by machines and must not each cost a database query. The one
+        # public route that cares who you are, /api/me, asks for itself.
+        if rt.config.web.auth.enabled and not web_auth.is_public_path(request.url.path):
+            if await web_auth.current_identity(request, rt) is None:
+                return JSONResponse({"ok": False, "error": "auth_required"}, status_code=401)
         return await call_next(request)
 
     @app.middleware("http")
@@ -162,6 +166,7 @@ def create_app(rt: Runtime) -> FastAPI:
     app.include_router(web_auth.build_router(rt), prefix="/api")
     app.include_router(api.build_router(rt))
     app.include_router(manage.build_router(rt), prefix="/api")
+    app.include_router(users.build_router(rt), prefix="/api")
     app.include_router(web_modules.build_router(rt), prefix="/api")
     app.include_router(ws.build_router(rt))
     return app

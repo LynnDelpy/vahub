@@ -45,7 +45,10 @@ async def rt(construct, state_dir: Path, modules_dir: Path, write_manifest, wait
 
     # `add` is declared write: the read route must refuse it and the control
     # route must run it. `crash` stays destructive: neither route may reach it.
-    write_manifest("fake", tools={"echo": {"class": "read"}, "crash": {"class": "destructive"}, "add": {"class": "write"}})
+    write_manifest(
+        "fake",
+        tools={"echo": {"class": "read"}, "crash": {"class": "destructive"}, "add": {"class": "write"}},
+    )
     runtime = construct(
         Runtime, config=_config(state_dir, modules_dir), config_path=modules_dir.parent / "x.yaml"
     )

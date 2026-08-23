@@ -25,6 +25,7 @@ import time
 import uuid
 from typing import TYPE_CHECKING, Any
 
+from ..agent.policy import _stronger
 from . import metrics
 from .logging import get_logger
 from .mcpclient import McpError
@@ -32,6 +33,7 @@ from .supervisor import Module, State, Supervisor, extract_payload
 
 if TYPE_CHECKING:
     from ..agent.policy import Gate
+    from ..config.models import ToolClass
     from ..storage.store import Store
     from .bus import EventBus
 
@@ -98,20 +100,26 @@ class ModuleAPI:
         args: dict[str, Any] | None = None,
         subject: str | None = None,
         timeout_s: float = DEFAULT_TIMEOUT_S,
+        allow_write: bool = False,
     ) -> dict[str, Any]:
-        """A signed-in owner reading their own data through a module's read tool.
+        """A signed-in owner using a module directly: reading their own data for a
+        dashboard card, and (when `allow_write` is set by a control route) acting
+        on something they are looking at, such as pausing what is playing.
 
         The policy gate governs the agent and the scheduler, not what an
         authenticated owner does from the web UI (the same principle by which the
-        owner may edit locations and settings directly). This path is therefore
-        not gated, so a dashboard card can show unread mail without a policy rule.
-        It runs only tools the module *declares* read (and that the policy has not
-        classified as something stronger), and every call is audited as the acting
-        user. That declaration is the module's own advisory claim; see
-        _is_read_tool for why trusting it on this owner-only path is consistent
-        with the trust model, and for what it does and does not guarantee."""
+        owner may edit locations and settings, or install a module, directly).
+        This path is therefore not gated, and every call is audited as the acting
+        user.
+
+        Two limits hold regardless of `allow_write`. A destructive tool is never
+        reachable here: those are exactly the actions that must be confirmed out
+        of band, so they go through the gate or not at all. And the class used is
+        the stronger of the module's manifest declaration and any policy rule, so
+        a rule can only ever restrict this path, never widen it. See
+        `_owner_class` for what that trusts and what it does not."""
         try:
-            return await self._call_read(module, tool, args, subject, timeout_s)
+            return await self._call_read(module, tool, args, subject, timeout_s, allow_write)
         except asyncio.CancelledError:
             raise
         except Exception as e:
@@ -125,6 +133,7 @@ class ModuleAPI:
         args: dict[str, Any] | None,
         subject: str | None,
         timeout_s: float,
+        allow_write: bool = False,
     ) -> dict[str, Any]:
         if args is None:
             args = {}
@@ -137,39 +146,43 @@ class ModuleAPI:
             return {"ok": False, "error": "unknown_module", "detail": module}
         if tool.startswith("__"):
             return {"ok": False, "error": "reserved_tool", "detail": tool}
-        if not self._is_read_tool(mod, tool):
-            # Anything the module or the policy considers write or destructive is
-            # refused here; the owner uses the assistant (which is gated) for those.
+        cls = self._owner_class(mod, tool)
+        allowed = cls == "read" or (cls == "write" and allow_write)
+        if not allowed:
+            # Anything stronger than this route permits is refused; a destructive
+            # tool is refused on every owner route, and the assistant (which is
+            # gated, and asks first) is the way to reach it.
             return {"ok": False, "error": "not_readonly", "detail": tool}
         if mod.state is not State.READY or mod.client is None:
             return {"ok": False, "error": "module_not_ready", "detail": mod.state.value}
         if not any(t.get("name") == tool for t in mod.tools):
             return {"ok": False, "error": "unknown_tool", "detail": tool}
-        return await self._dispatch(mod, tool, args, timeout_s, subject or "user", "allow")
+        decision = "allow-owner-write" if cls == "write" else "allow"
+        return await self._dispatch(mod, tool, args, timeout_s, subject or "user", decision)
 
-    def _is_read_tool(self, mod: Module, tool: str) -> bool:
-        """Whether the owner read-path may run this tool.
+    def _owner_class(self, mod: Module, tool: str) -> ToolClass | None:
+        """The class that governs this tool on the owner path: the stronger of
+        what the module declares in its manifest and what a policy rule says.
+        None when the module does not declare the tool at all.
 
-        Two conditions: the module must DECLARE the tool read in its manifest,
-        and the policy must not classify it as anything stronger (an explicit
-        write/destructive rule is honoured even though this path otherwise
-        bypasses the gate). The manifest class is the module's own, advisory
-        claim. This path trusts it, which is consistent with the trust model: a
-        module you installed is code you chose to run in its own process with its
-        own credentials, so it can already reach whatever that allows.
+        The manifest class is the module's own, advisory claim. This path trusts
+        it, which is consistent with the trust model: a module you installed is
+        code you chose to run in its own process with its own credentials, so it
+        can already reach whatever that allows.
 
-        What this does NOT guarantee: a module that mislabels a write tool as
-        read, with no policy rule naming it, could have that tool invoked here by
-        the signed-in owner (or by a dashboard card that fires it). What it DOES
-        guarantee is the boundary that does not rest on trusting the module: the
-        untrusted model and the scheduler still cannot reach any tool without a
-        policy rule, because they go through the gate and never this path. To
-        remove even the owner-path trust for a specific tool, give it a
-        write/destructive rule in the policy."""
+        What this does NOT guarantee: a module that mislabels a destructive tool
+        as read or write, with no policy rule naming it, could have that tool
+        invoked here by the signed-in owner. What it DOES guarantee is the
+        boundary that does not rest on trusting the module: the untrusted model
+        and the scheduler still cannot reach any tool without a policy rule,
+        because they go through the gate and never this path. To remove even the
+        owner-path trust for a specific tool, give it a destructive rule in the
+        policy, which this path refuses outright."""
         spec = mod.manifest.tools.get(tool)
-        manifest_read = spec is not None and spec.cls == "read"
-        policy_read = self._gate is None or self._gate.cls_for(mod.name, tool) == "read"
-        return manifest_read and policy_read
+        if spec is None:
+            return None
+        policy_cls = self._gate.cls_for(mod.name, tool) if self._gate is not None else None
+        return _stronger(spec.cls, policy_cls)
 
     async def cancel(self, pending_id: str) -> dict[str, Any]:
         if self._store is None:

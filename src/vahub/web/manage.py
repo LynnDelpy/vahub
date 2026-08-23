@@ -147,6 +147,28 @@ def build_router(rt: Runtime) -> APIRouter:
         result = await rt.moduleapi.call_read(module, tool, body.args, subject=who, timeout_s=body.timeout_s)
         return JSONResponse(result, status_code=200 if result.get("ok") else 400)
 
+    @router.post("/control/{module}/{tool}")
+    async def call_control_tool(
+        body: ToolCallBody,
+        request: Request,
+        module: str = Path(pattern=_MODULE),
+        tool: str = Path(pattern=_TOOL),
+    ) -> JSONResponse:
+        """Let the signed-in owner act on a module directly: pause what is
+        playing, move it to another speaker, turn the volume down.
+
+        This is the same owner path as the card above, one step wider: it also
+        runs write-class tools. A destructive tool is still refused here, because
+        those are the ones that must be confirmed out of band, and the assistant
+        (which is gated) remains the only way to reach them. Origin-checked,
+        login-guarded, and audited as the acting user, like every other write."""
+        check_origin(request, rt.config)
+        who = await web_auth.current_username(request, rt)
+        result = await rt.moduleapi.call_read(
+            module, tool, body.args, subject=who, timeout_s=body.timeout_s, allow_write=True
+        )
+        return JSONResponse(result, status_code=200 if result.get("ok") else 400)
+
     # --- schedules --------------------------------------------------------
     @router.get("/schedules")
     async def list_schedules(request: Request) -> JSONResponse:

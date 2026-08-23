@@ -43,7 +43,9 @@ def _config(state_dir: Path, modules_dir: Path) -> Config:
 async def rt(construct, state_dir: Path, modules_dir: Path, write_manifest, wait_for):
     from vahub.core.runtime import Runtime
 
-    write_manifest("fake")
+    # `add` is declared write: the read route must refuse it and the control
+    # route must run it. `crash` stays destructive: neither route may reach it.
+    write_manifest("fake", tools={"echo": {"class": "read"}, "crash": {"class": "destructive"}, "add": {"class": "write"}})
     runtime = construct(
         Runtime, config=_config(state_dir, modules_dir), config_path=modules_dir.parent / "x.yaml"
     )
@@ -98,11 +100,32 @@ async def test_owner_cannot_call_a_destructive_tool(client) -> None:
     assert r.status_code == 400 and r.json()["error"] == "not_readonly"
 
 
-async def test_owner_cannot_call_a_tool_not_declared_read(client) -> None:
-    # `add` exists at runtime but the manifest does not declare it read, so the
-    # owner path will not run it: only manifest-declared read tools are callable.
+async def test_the_card_route_refuses_a_write_tool(client) -> None:
+    # The route a dashboard card uses stays read-only, so a card cannot act.
     r = await client.post("/api/tools/fake/add", json={"args": {"a": 1, "b": 2}})
     assert r.status_code == 400 and r.json()["error"] == "not_readonly"
+
+
+async def test_owner_can_control_a_write_tool(client) -> None:
+    # The control route is what a play/pause button calls: write is allowed.
+    r = await client.post("/api/control/fake/add", json={"args": {"a": 2, "b": 3}})
+    assert r.status_code == 200 and r.json()["ok"] is True
+
+
+async def test_control_route_still_refuses_a_destructive_tool(client) -> None:
+    # Destructive stays out of every owner route: those need the gate, which
+    # asks a person out of band before anything happens.
+    r = await client.post("/api/control/fake/crash", json={"args": {}})
+    assert r.status_code == 400 and r.json()["error"] == "not_readonly"
+
+
+async def test_control_route_is_origin_checked(client) -> None:
+    r = await client.post(
+        "/api/control/fake/add",
+        json={"args": {"a": 1, "b": 1}},
+        headers={"origin": "https://evil.example"},
+    )
+    assert r.status_code == 403
 
 
 async def test_owner_call_of_the_health_probe_is_refused(client) -> None:

@@ -337,6 +337,22 @@
   .cfgrow .key.req::after { content: " *"; color: var(--danger); }
   .cfgrow input { flex: 1; min-width: 8rem; }
 
+  /* ---------- now playing ---------- */
+  .player .track { font-size: var(--fs-lead); font-weight: 600; letter-spacing: -.01em; overflow-wrap: anywhere; }
+  .player .by { color: var(--text-2); overflow-wrap: anywhere; }
+  .player .where { display: flex; align-items: center; gap: var(--s2); margin-top: var(--s1); color: var(--text-3); font-size: var(--fs-meta); }
+  .player .bar { height: 3px; border-radius: 2px; background: var(--sunken); margin: var(--s3) 0 var(--s2); overflow: hidden; }
+  .player .bar span { display: block; height: 100%; background: var(--accent-fill); }
+  .transport { display: flex; align-items: center; gap: var(--s2); margin-top: var(--s2); }
+  .transport button { display: inline-flex; align-items: center; justify-content: center; width: var(--tap); height: var(--tap); border: 1px solid var(--line-strong); border-radius: 50%; background: var(--surface); color: var(--text); cursor: pointer; }
+  .transport button:hover { background: var(--sunken); }
+  .transport button.main { background: var(--accent-fill); border-color: transparent; color: var(--accent-fg); }
+  .transport button[disabled] { opacity: .5; cursor: default; }
+  .transport .spacer { flex: 1; }
+  .player .picker { display: flex; align-items: center; gap: var(--s2); margin-top: var(--s3); }
+  .player .picker select { flex: 1; min-height: 2.25rem; }
+  .player input[type=range] { width: 100%; min-height: 1.5rem; padding: 0; accent-color: var(--accent-fill); background: transparent; border: none; }
+
   /* ---------- chat ---------- */
   .msg { max-width: 85%; padding: var(--s2) var(--s3); border-radius: var(--r-card); white-space: pre-wrap; overflow-wrap: anywhere; }
   .msg.mine { align-self: flex-end; background: var(--accent-fill); color: var(--accent-fg); border-bottom-right-radius: var(--s1); }
@@ -522,6 +538,12 @@
     mic: ["M12 4.4a2.4 2.4 0 0 1 2.4 2.4v4.8a2.4 2.4 0 0 1-4.8 0V6.8A2.4 2.4 0 0 1 12 4.4Z", "M6.6 11.4a5.4 5.4 0 0 0 10.8 0", "M12 16.8v3"],
     send: ["m4.5 12 15-6.5-4 6.5 4 6.5z"],
     stop: ["M7.5 7.5h9v9h-9z"],
+    play: ["M8 5.5 18.5 12 8 18.5z"],
+    pause: ["M9 6v12", "M15 6v12"],
+    skipBack: ["M17.5 6v12L9 12z", "M6.5 5.5v13"],
+    skipForward: ["M6.5 6v12L15 12z", "M17.5 5.5v13"],
+    music: ["M9 18.2V6.4l9-1.9v11.4", "M7 21a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z", "M16 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z"],
+    speaker: ["M11 5.5 6.5 9.5H4v5h2.5L11 18.5z", "M15 9.5a3.5 3.5 0 0 1 0 5", "M17.6 7a7 7 0 0 1 0 10"],
     sidebar: ["M4.5 4.5h15v15h-15z", "M9.8 4.5v15"],
     user: ["M12 4.6a3.4 3.4 0 1 0 0 6.8 3.4 3.4 0 0 0 0-6.8Z", "M5.2 19.4a6.8 6.8 0 0 1 13.6 0"],
     people: ["M9.2 4.8a3.1 3.1 0 1 0 0 6.2 3.1 3.1 0 0 0 0-6.2Z", "M3.2 19.2a6 6 0 0 1 12 0", "M16.2 5.4a3.1 3.1 0 0 1 0 6", "M17.4 13.4a6 6 0 0 1 3.4 5.8"],
@@ -553,6 +575,7 @@
     github: "git", gitlab: "git", email: "mail", transit: "train", weather: "sun",
     rss: "rss", calendar: "calendar", obsidian: "note", homelab: "server",
     homeassistant: "bulb", core: "sparkle", calculator: "calc", notify: "bell", time: "clock",
+    spotify: "music", mpd: "music", releases: "sparkle",
   };
   function iconName(key) { return ICON_FOR[key] || "grid"; }
 
@@ -1117,7 +1140,7 @@
   }
 
   // A card backed by a module's read `summary` tool: fixed tiles + a recent list.
-  function serviceWidget(module, tiles, line) {
+  function serviceWidget(module, tiles, line, listKey) {
     return async function (body) {
       body.appendChild(el("div", { class: "muted", text: "Loading…" }));
       const r = await api("POST", "/api/tools/" + module + "/summary", { args: {} });
@@ -1135,7 +1158,7 @@
         ]));
       });
       body.appendChild(row);
-      const recent = p.recent || [];
+      const recent = p[listKey || "recent"] || [];
       if (recent.length) {
         const ul = el("ul");
         recent.slice(0, 5).forEach(function (item) { ul.appendChild(el("li", null, [line(item)])); });
@@ -1211,6 +1234,156 @@
     };
   }
 
+  // ---- now playing ------------------------------------------------------
+  // Two players, one card. Spotify has devices it can hand playback to; MPD has
+  // outputs it can switch on. Both answer the same questions, so the card only
+  // needs to know which words each one uses and which tool moves the music.
+  const PLAYERS = {
+    spotify: {
+      title: "Spotify",
+      listKey: "devices",
+      pick: "Play on",
+      move: function (name) { return ["transfer_playback", { device: name }]; },
+    },
+    mpd: {
+      title: "Music",
+      listKey: "outputs",
+      pick: "Playing through",
+      move: function (name) { return ["set_output", { name: name, on: true }]; },
+    },
+  };
+
+  // A control is a write tool, so it goes to the control route rather than the
+  // read-only one the rest of the cards use.
+  async function control(module, tool, args) {
+    return api("POST", "/api/control/" + encodeURIComponent(module) + "/" + encodeURIComponent(tool), { args: args || {} });
+  }
+
+  function playerWidget(module) {
+    const spec = PLAYERS[module];
+    return async function (body) {
+      const draw = async function () {
+        body.textContent = "";
+        body.appendChild(el("div", { class: "muted", text: "Loading…" }));
+        const r = await api("POST", "/api/tools/" + module + "/summary", { args: {} });
+        body.textContent = "";
+        if (reauthed(r)) return;
+        if (!r.ok || !r.data.ok) { body.appendChild(el("div", { class: "muted", text: toolError(r) })); return; }
+        const state = r.data.result || {};
+        if (state.configured === false) {
+          body.appendChild(el("div", { class: "muted", text: "Sign it in under Settings, Apps." }));
+          return;
+        }
+        if (state.error) { body.appendChild(el("div", { class: "muted", text: String(state.error) })); return; }
+        drawPlayer(body, module, spec, state, draw);
+      };
+      await draw();
+    };
+  }
+
+  function drawPlayer(body, module, spec, state, refresh) {
+    const wrap = el("div", { class: "player" });
+
+    if (state.track) {
+      wrap.appendChild(el("div", { class: "track", text: String(state.track) }));
+      if (state.artist) wrap.appendChild(el("div", { class: "by", text: String(state.artist) }));
+    } else {
+      wrap.appendChild(el("div", { class: "by", text: state.playing ? "Playing" : "Nothing playing" }));
+    }
+
+    // A progress bar only if we know both ends of it.
+    const at = Number(state.progress_ms != null ? state.progress_ms : state.elapsed_s);
+    const of = Number(state.duration_ms != null ? state.duration_ms : state.duration_s);
+    if (of > 0 && at >= 0) {
+      const done = Math.max(0, Math.min(100, (at / of) * 100));
+      const fill = el("span");
+      fill.style.setProperty("width", done.toFixed(1) + "%");
+      wrap.appendChild(el("div", { class: "bar" }, [fill]));
+    }
+    if (state.position || state.device) {
+      const bits = [];
+      if (state.position && state.length) bits.push(state.position + " / " + state.length);
+      if (state.device) bits.push(String(state.device));
+      wrap.appendChild(el("div", { class: "where" }, [icon("speaker", "i-sm"), el("span", { text: bits.join("  ·  ") })]));
+    }
+
+    // ---- transport ----
+    const buttons = [];
+    const act = async function (btn, tool, args) {
+      buttons.forEach(function (b) { b.disabled = true; });
+      const r = await control(module, tool, args);
+      if (reauthed(r)) return;
+      if (!r.ok || !r.data.ok) {
+        buttons.forEach(function (b) { b.disabled = false; });
+        wrap.appendChild(el("div", { class: "err", text: playerError(r) }));
+        return;
+      }
+      // Spotify reports the new state a beat after it accepts the command.
+      setTimeout(refresh, 350);
+    };
+    const mk = function (name, label, tool, args, main) {
+      const b = el("button", { type: "button", title: label, "aria-label": label, class: main ? "main" : "" },
+        [icon(name)]);
+      b.addEventListener("click", function () { act(b, tool, args); });
+      buttons.push(b);
+      return b;
+    };
+    const playing = !!state.playing;
+    const transport = el("div", { class: "transport" }, [
+      mk("skipBack", "Previous", "previous_track", {}),
+      mk(playing ? "pause" : "play", playing ? "Pause" : "Play", playing ? "pause" : "play", {}, true),
+      mk("skipForward", "Next", "next_track", {}),
+      el("span", { class: "spacer" }),
+    ]);
+    wrap.appendChild(transport);
+
+    // ---- where it plays ----
+    const devices = state[spec.listKey];
+    if (Array.isArray(devices) && devices.length) {
+      const select = el("select", { "aria-label": spec.pick });
+      devices.forEach(function (d) {
+        const name = String(d.name || "");
+        const option = el("option", { value: name, text: name + (d.type ? " · " + d.type : "") });
+        if (d.active) option.selected = true;
+        select.appendChild(option);
+      });
+      select.addEventListener("change", async function () {
+        const moved = spec.move(select.value);
+        select.disabled = true;
+        const r = await control(module, moved[0], moved[1]);
+        if (reauthed(r)) return;
+        if (!r.ok || !r.data.ok) {
+          select.disabled = false;
+          wrap.appendChild(el("div", { class: "err", text: playerError(r) }));
+          return;
+        }
+        setTimeout(refresh, 350);
+      });
+      wrap.appendChild(el("div", { class: "picker" }, [icon("speaker", "i-sm"), select]));
+    }
+
+    // ---- volume ----
+    if (state.volume != null) {
+      const slider = el("input", { type: "range", min: "0", max: "100", "aria-label": "Volume" });
+      slider.value = String(state.volume);
+      slider.addEventListener("change", async function () {
+        const r = await control(module, "set_volume", { percent: Number(slider.value) });
+        if (reauthed(r)) return;
+        if (!r.ok || !r.data.ok) wrap.appendChild(el("div", { class: "err", text: playerError(r) }));
+      });
+      wrap.appendChild(slider);
+    }
+
+    body.appendChild(wrap);
+  }
+
+  function playerError(r) {
+    const data = r.data || {};
+    if (data.error === "not_readonly") return "That control is not allowed for this module.";
+    const detail = data.detail || (data.result && data.result.error);
+    return detail ? String(detail) : "That did not go through.";
+  }
+
   const WIDGETS = {
     clock:    { title: "Clock", render: renderClock },
     quickask: { title: "Quick ask", wide: true, render: renderQuickAsk },
@@ -1223,6 +1396,11 @@
     gitlab:   { title: "GitLab", render: serviceWidget("gitlab",
       [{ key: "todos", label: "To-dos" }, { key: "assigned_merge_requests", label: "MRs" }, { key: "assigned_issues", label: "Issues" }],
       function (it) { return twoLine(it.title, it.project); }) },
+    spotify:  { title: "Spotify", render: playerWidget("spotify") },
+    mpd:      { title: "Music", render: playerWidget("mpd") },
+    releases: { title: "New releases", render: serviceWidget("releases",
+      [{ key: "videos", label: "Videos" }, { key: "podcasts", label: "Podcasts" }, { key: "music", label: "Music" }],
+      function (it) { return twoLine(it.title, it.from); }, "items") },
     email:    { title: "Email", render: serviceWidget("email",
       [{ key: "unread", label: "Unread" }, { key: "total", label: "Total" }],
       function (it) { return twoLine(it.from, it.subject); }) },

@@ -80,6 +80,9 @@ class Runtime:
         self.llm = build_adapter(config.llm)
         self.stt = build_stt(config.speech.stt)
         self.tts = build_tts(config.speech.tts)
+        # What the model adapters were actually built from: the file config until
+        # the stored settings are applied at startup.
+        self.models = config
         self.sessions = SessionStore()
         self.agent = AgentLoop(
             self.catalog,
@@ -110,6 +113,60 @@ class Runtime:
         self.supervisor.modules[CORE_MODULE] = module
         metrics.set_module_state(CORE_MODULE, module.state.value)
 
+    async def effective_model_config(self) -> Config:
+        """The configuration with the owner's stored model choices applied over
+        the file. The file stays the source of truth for everything the UI does
+        not offer, and for anything the owner has not overridden."""
+        from ..config.models import MODEL_FIELDS
+
+        stored = await self.store.model_config()
+        if not stored:
+            return self.config
+        data = self.config.model_dump()
+        sections = {"llm": data["llm"], "stt": data["speech"]["stt"], "tts": data["speech"]["tts"]}
+        for section, values in stored.items():
+            target = sections.get(section)
+            if target is None:
+                continue
+            for key, value in values.items():
+                if key not in MODEL_FIELDS.get(section, ()):
+                    continue  # a stale row for a field the UI no longer offers
+                target[key] = value
+        # Validating through the model means a stored value that cannot be used
+        # (an unknown provider, a temperature out of range) is refused here
+        # rather than crashing a turn later.
+        return Config.model_validate(data)
+
+    async def apply_model_config(self) -> None:
+        """Rebuild the model adapters from the stored settings. Called at start
+        and whenever the owner changes them, so a new key or a new provider takes
+        effect on the next turn instead of the next restart."""
+        from ..agent.llm import build_adapter
+        from ..speech import build_stt, build_tts
+
+        try:
+            effective = await self.effective_model_config()
+        except Exception as e:
+            # Refusing to start over a bad stored value would lock the owner out
+            # of the very page that fixes it, so keep what is already running.
+            log.error("model_config_invalid", error=str(e))
+            return
+        self.models = effective
+        previous = (self.llm, self.stt, self.tts)
+        self.llm = build_adapter(effective.llm)
+        self.stt = build_stt(effective.speech.stt)
+        self.tts = build_tts(effective.speech.tts)
+        self.agent.set_llm(self.llm)
+        for adapter in previous:
+            await _aclose(adapter)
+        log.info(
+            "model_config_applied",
+            llm_provider=effective.llm.provider,
+            llm_model=effective.llm.model,
+            stt_provider=effective.speech.stt.provider,
+            tts_provider=effective.speech.tts.provider,
+        )
+
     async def run(self) -> None:
         self.config.hub.state_dir.mkdir(parents=True, exist_ok=True)
         await self.store.open()
@@ -129,6 +186,9 @@ class Runtime:
         # it before discovery so a module configured that way counts as ready and
         # starts on this boot, exactly as an environment-configured one does.
         self.supervisor.set_db_config(await self.store.all_module_config())
+        # The model chosen in the web UI is stored the same way, so apply it
+        # before the first turn rather than making the owner restart the hub.
+        await self.apply_model_config()
         self.supervisor.discover()
         await self.supervisor.start()
         # After start(): the built-in module is always ready and has no process,

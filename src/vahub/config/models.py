@@ -148,6 +148,17 @@ class TTSConfig(Strict):
     request_timeout_s: float = Field(60.0, gt=0)
 
 
+# Which fields of the model sections the owner may set from the web UI, and
+# which of them are secrets. Anything not named here cannot be overridden from a
+# browser at all: the config file stays the only way to set it.
+MODEL_FIELDS: dict[str, tuple[str, ...]] = {
+    "llm": ("provider", "base_url", "model", "api_key", "temperature", "max_tokens"),
+    "stt": ("provider", "base_url", "model", "api_key"),
+    "tts": ("provider", "base_url", "model", "voice", "api_key"),
+}
+MODEL_SECRETS: frozenset[str] = frozenset({"api_key"})
+
+
 class SpeechConfig(Strict):
     stt: STTConfig = Field(default_factory=STTConfig)
     tts: TTSConfig = Field(default_factory=TTSConfig)

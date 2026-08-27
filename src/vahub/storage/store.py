@@ -200,7 +200,28 @@ _V4: tuple[str, ...] = (
     "UPDATE users SET role = 'admin'",
 )
 
-MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = ((1, _V1), (2, _V2), (3, _V3), (4, _V4))
+# Which model answers, listens and speaks, chosen from the web UI. It lives
+# beside module_config rather than in app_settings because it holds API keys,
+# and app_settings is read back to the browser wholesale.
+_V5: tuple[str, ...] = (
+    """
+    CREATE TABLE IF NOT EXISTS model_config (
+        section    TEXT NOT NULL,
+        key        TEXT NOT NULL,
+        value      TEXT NOT NULL,
+        updated_at REAL NOT NULL,
+        PRIMARY KEY (section, key)
+    )
+    """,
+)
+
+MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = (
+    (1, _V1),
+    (2, _V2),
+    (3, _V3),
+    (4, _V4),
+    (5, _V5),
+)
 
 SCHEMA_VERSION = MIGRATIONS[-1][0]
 
@@ -797,6 +818,29 @@ class Store:
 
     async def delete_module_config(self, module: str, key: str) -> bool:
         cur = await self.db.execute("DELETE FROM module_config WHERE module=? AND key=?", (module, key))
+        return bool(cur.rowcount)
+
+    # --- which model answers, listens and speaks --------------------------
+    async def model_config(self) -> dict[str, dict[str, str]]:
+        """Every stored model setting as {section: {key: value}}. This is the only
+        method that returns the values, including API keys: it feeds the runtime
+        building an adapter, never a response to the browser."""
+        cur = await self.db.execute("SELECT section, key, value FROM model_config")
+        out: dict[str, dict[str, str]] = {}
+        for row in await cur.fetchall():
+            out.setdefault(row["section"], {})[row["key"]] = row["value"]
+        return out
+
+    async def set_model_config(self, section: str, key: str, value: str) -> None:
+        await self.db.execute(
+            "INSERT INTO model_config(section, key, value, updated_at) VALUES(?,?,?,?)"
+            " ON CONFLICT(section, key) DO UPDATE SET value=excluded.value,"
+            " updated_at=excluded.updated_at",
+            (section, key, value, time.time()),
+        )
+
+    async def delete_model_config(self, section: str, key: str) -> bool:
+        cur = await self.db.execute("DELETE FROM model_config WHERE section=? AND key=?", (section, key))
         return bool(cur.rowcount)
 
     async def delete_all_module_config(self, module: str) -> int:

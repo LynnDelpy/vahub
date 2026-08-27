@@ -14,12 +14,14 @@ the scheduler's policy at run time no matter who created it.
 
 from __future__ import annotations
 
+import asyncio
 from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, Path, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
+from ..config.models import MODEL_FIELDS, MODEL_SECRETS
 from . import auth as web_auth
 from .security import check_origin
 
@@ -30,6 +32,13 @@ _NAME = r"^[a-z0-9][a-z0-9_.-]{0,39}$"
 _KEY = r"^[a-z0-9][a-z0-9_.:-]{0,59}$"
 _MODULE = r"^[a-z][a-z0-9_-]{0,63}$"
 _TOOL = r"^[a-zA-Z_][a-zA-Z0-9_]{0,63}$"
+_SECTION = r"^(llm|stt|tts)$"
+_FIELD = r"^[a-z][a-z_]{0,39}$"
+
+
+def _first_line(text: str) -> str:
+    """A validation error is a paragraph; a form field needs a sentence."""
+    return str(text).strip().split("\n")[0][:200]
 
 
 class ToolCallBody(BaseModel):
@@ -69,6 +78,21 @@ class ScheduleBody(BaseModel):
 class EnabledBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
     enabled: bool
+
+
+class ModelBody(BaseModel):
+    """One model section as the UI submits it. Every field is optional: the form
+    sends what it changed, and an omitted field keeps whatever is stored (or the
+    config file's value, if nothing is stored)."""
+
+    model_config = ConfigDict(extra="forbid")
+    provider: str | None = Field(default=None, max_length=40)
+    base_url: str | None = Field(default=None, max_length=300)
+    model: str | None = Field(default=None, max_length=120)
+    voice: str | None = Field(default=None, max_length=60)
+    api_key: str | None = Field(default=None, max_length=500)
+    temperature: float | None = Field(default=None, ge=0, le=2)
+    max_tokens: int | None = Field(default=None, ge=1, le=200_000)
 
 
 def build_router(rt: Runtime) -> APIRouter:
@@ -168,6 +192,108 @@ def build_router(rt: Runtime) -> APIRouter:
             module, tool, body.args, subject=who, timeout_s=body.timeout_s, allow_write=True
         )
         return JSONResponse(result, status_code=200 if result.get("ok") else 400)
+
+    # --- which model answers, listens and speaks --------------------------
+    # The config file remains the source of truth for everything else; these
+    # routes write a small set of named fields into the database and rebuild the
+    # adapters. An API key is written and never read back, exactly like a module
+    # token. The assistant has no tool for any of this: changing the model is the
+    # owner's decision, made in a browser, not something a conversation can do.
+    @router.get("/models")
+    async def get_models(request: Request) -> JSONResponse:
+        await web_auth.require_admin(request, rt)
+        effective = getattr(rt, "models", rt.config)
+        stored = await rt.store.model_config()
+        sections = {"llm": effective.llm, "stt": effective.speech.stt, "tts": effective.speech.tts}
+        out: dict[str, Any] = {}
+        for name, section in sections.items():
+            values: dict[str, Any] = {}
+            for field in MODEL_FIELDS[name]:
+                if field in MODEL_SECRETS:
+                    continue  # never leaves the hub
+                values[field] = getattr(section, field, None)
+            out[name] = {
+                **values,
+                # Which secrets have a value, and which fields the owner set here
+                # rather than in the file, so the UI can offer to clear one.
+                "secrets_set": [
+                    f for f in MODEL_FIELDS[name] if f in MODEL_SECRETS and getattr(section, f, None)
+                ],
+                "overridden": sorted(stored.get(name, {})),
+            }
+        out["providers"] = {
+            "llm": ["openai_compat", "anthropic", "mock"],
+            "stt": ["browser", "openai_compat", "none"],
+            "tts": ["browser", "openai_compat", "none"],
+        }
+        return JSONResponse(out)
+
+    @router.put("/models/{section}")
+    async def put_models(
+        body: ModelBody, request: Request, section: str = Path(pattern=_SECTION)
+    ) -> JSONResponse:
+        check_origin(request, rt.config)
+        await web_auth.require_admin(request, rt)
+        allowed = MODEL_FIELDS.get(section)
+        if allowed is None:
+            return JSONResponse({"ok": False, "error": "unknown_section"}, status_code=404)
+        submitted = {k: v for k, v in body.model_dump(exclude_unset=True).items() if v is not None}
+        rejected = sorted(set(submitted) - set(allowed))
+        if rejected:
+            # e.g. a voice for the language model: refuse rather than store a
+            # value that section will never read.
+            return JSONResponse(
+                {"ok": False, "error": "unknown_field", "detail": ", ".join(rejected)},
+                status_code=400,
+            )
+        for key, value in submitted.items():
+            await rt.store.set_model_config(section, key, str(value))
+        # Try the new settings before reporting success: a provider the config
+        # model refuses would otherwise be stored and silently ignored.
+        try:
+            await rt.effective_model_config()
+        except Exception as e:
+            for key in submitted:
+                await rt.store.delete_model_config(section, key)
+            return JSONResponse(
+                {"ok": False, "error": "invalid", "detail": _first_line(str(e))}, status_code=400
+            )
+        await rt.apply_model_config()
+        return JSONResponse({"ok": True, "section": section, "set": sorted(submitted)})
+
+    @router.delete("/models/{section}/{key}")
+    async def delete_models(
+        request: Request, section: str = Path(pattern=_SECTION), key: str = Path(pattern=_FIELD)
+    ) -> JSONResponse:
+        """Drop one override, so the config file's value applies again."""
+        check_origin(request, rt.config)
+        await web_auth.require_admin(request, rt)
+        if key not in MODEL_FIELDS.get(section, ()):
+            return JSONResponse({"ok": False, "error": "unknown_field"}, status_code=400)
+        removed = await rt.store.delete_model_config(section, key)
+        await rt.apply_model_config()
+        return JSONResponse({"ok": removed, "section": section, "key": key})
+
+    @router.post("/models/llm/test")
+    async def test_llm(request: Request) -> JSONResponse:
+        """Ask the configured model to say one word, so a wrong key or a
+        misspelled model name is a sentence here rather than a broken chat."""
+        check_origin(request, rt.config)
+        await web_auth.require_admin(request, rt)
+        try:
+            result = await asyncio.wait_for(
+                rt.llm.complete([{"role": "user", "content": "Reply with the single word: ready"}], []),
+                timeout=30,
+            )
+        except TimeoutError:
+            return JSONResponse({"ok": False, "error": "timeout", "detail": "no answer within 30s"})
+        except Exception as e:
+            return JSONResponse({"ok": False, "error": "failed", "detail": _first_line(str(e))})
+        text = (getattr(result, "text", "") or "").strip()
+        models = getattr(rt, "models", rt.config)
+        return JSONResponse(
+            {"ok": True, "provider": models.llm.provider, "model": models.llm.model, "reply": text[:120]}
+        )
 
     # --- schedules --------------------------------------------------------
     @router.get("/schedules")

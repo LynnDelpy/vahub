@@ -82,7 +82,10 @@ def build_router(rt: Runtime) -> APIRouter:
         # The browser needs this to choose a voice path: "browser" means it
         # transcribes and speaks locally (no audio leaves the machine), while
         # "openai_compat" means it posts audio to /api/voice.
-        speech = rt.config.speech
+        # The effective settings, not the file's: the owner may have changed the
+        # speech provider from the UI, and the browser decides where to send
+        # audio from exactly this answer.
+        speech = getattr(rt, "models", rt.config).speech
         return JSONResponse(
             {
                 "stt_provider": speech.stt.provider,

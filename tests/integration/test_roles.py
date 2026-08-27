@@ -178,6 +178,12 @@ async def test_an_admin_sees_the_operator_half(rt, admin, write_manifest) -> Non
         ("GET", "/api/modules/fake/config", None),
         ("PUT", "/api/modules/fake/config/FAKE_NAME", {"value": "x"}),
         ("DELETE", "/api/modules/fake/config/FAKE_NAME", None),
+        # Choosing the model spends the household's money and holds an API key,
+        # so it sits with installing an app rather than with saved places.
+        ("GET", "/api/models", None),
+        ("PUT", "/api/models/llm", {"model": "something"}),
+        ("DELETE", "/api/models/llm/model", None),
+        ("POST", "/api/models/llm/test", None),
     ],
 )
 async def test_the_administrative_routes_refuse_a_plain_user(

@@ -1815,6 +1815,7 @@
   const SECTIONS = [
     ["places", "Places", "pin", "Names for the places you talk about"],
     ["schedules", "Automations", "repeat", "Things that happen on their own"],
+    ["models", "Models", "sparkle", "Which model answers, listens and speaks", true],
     ["prefs", "Preferences", "settings", "How this app looks and behaves"],
     ["account", "Your account", "user", "Your name, and your password"],
     // The trailing flag means: only an admin is shown this. The server refuses
@@ -1885,6 +1886,7 @@
       ({
         places: renderPlaces,
         schedules: renderSchedules,
+        models: renderModels,
         prefs: renderPreferences,
         account: renderAccount,
         people: renderPeople,
@@ -2311,6 +2313,139 @@
       ul.appendChild(err);
     });
     avList.appendChild(ul);
+  }
+
+  // ---- which model answers, listens and speaks --------------------------
+  // Three sections of the same shape. The config file still decides anything not
+  // offered here; a field left alone keeps whatever the file says, and clearing
+  // one hands it back to the file.
+  const MODEL_SECTIONS = [
+    {
+      key: "llm", title: "Assistant", why: "The model that answers you and calls your apps.",
+      fields: [
+        { name: "model", label: "Model", placeholder: "gpt-4o-mini, claude-sonnet-4-5, llama3.1" },
+        { name: "base_url", label: "Server", placeholder: "https://openrouter.ai/api/v1" },
+        { name: "api_key", label: "API key", secret: true },
+      ],
+    },
+    {
+      key: "stt", title: "Speech to text", why: "What turns what you say into words. “Browser” keeps it on this device.",
+      fields: [
+        { name: "model", label: "Model", placeholder: "whisper-1, Systran/faster-whisper-small" },
+        { name: "base_url", label: "Server", placeholder: "http://localhost:8000/v1" },
+        { name: "api_key", label: "API key", secret: true },
+      ],
+    },
+    {
+      key: "tts", title: "Text to speech", why: "What reads the answers out loud.",
+      fields: [
+        { name: "model", label: "Model", placeholder: "tts-1, piper" },
+        { name: "voice", label: "Voice", placeholder: "alloy" },
+        { name: "base_url", label: "Server", placeholder: "http://localhost:8000/v1" },
+        { name: "api_key", label: "API key", secret: true },
+      ],
+    },
+  ];
+  const PROVIDER_WORDS = {
+    openai_compat: "OpenAI-compatible", anthropic: "Anthropic", mock: "Built-in test model",
+    browser: "This device", none: "Off",
+  };
+
+  async function renderModels(root) {
+    root.appendChild(el("p", { class: "sub", text: "Point the hub at whichever model you want, including one running on your own machine. Keys are kept on the hub and never shown again." }));
+    const r = await api("GET", "/api/models");
+    if (reauthed(r)) return;
+    if (!r.ok) { blank(root, "Could not read the current settings.", null, null); return; }
+    const data = r.data || {};
+
+    MODEL_SECTIONS.forEach(function (spec) {
+      const current = data[spec.key] || {};
+      const card = el("div", { class: "card" });
+      card.appendChild(el("h2", { text: spec.title }));
+      card.appendChild(el("p", { class: "sub", text: spec.why }));
+
+      // provider first: it decides whether the rest even applies
+      const options = (data.providers || {})[spec.key] || [];
+      const pending = {};
+      const provider = el("select");
+      options.forEach(function (name) {
+        const option = el("option", { value: name, text: PROVIDER_WORDS[name] || name });
+        if (name === current.provider) option.selected = true;
+        provider.appendChild(option);
+      });
+      provider.addEventListener("change", function () { pending.provider = provider.value; syncRows(); });
+
+      const rows = el("div", { class: "grid" });
+      const inputs = {};
+      spec.fields.forEach(function (field) {
+        const isSet = (current.secrets_set || []).indexOf(field.name) !== -1;
+        const input = el("input", {
+          type: field.secret ? "password" : "text",
+          autocomplete: "off",
+          placeholder: field.secret ? (isSet ? "•••••• saved — type to replace" : "not set") : (field.placeholder || ""),
+        });
+        if (!field.secret && current[field.name] != null) input.value = String(current[field.name]);
+        input.addEventListener("input", function () { pending[field.name] = input.value; });
+        inputs[field.name] = input;
+        const label = el("label", { class: "field" }, [field.label, input]);
+        if ((current.overridden || []).indexOf(field.name) !== -1) {
+          const reset = el("button", { class: "btn ghost small", type: "button", text: "Use the config file" });
+          reset.addEventListener("click", async function () {
+            await api("DELETE", "/api/models/" + spec.key + "/" + field.name);
+            renderSettings();
+          });
+          label.appendChild(reset);
+        }
+        rows.appendChild(label);
+      });
+
+      // A provider that needs nothing else should not ask for anything else.
+      const syncRows = function () {
+        const chosen = pending.provider || current.provider;
+        const bare = chosen === "browser" || chosen === "none" || chosen === "mock";
+        rows.hidden = !!bare;
+      };
+
+      const err = el("div", { class: "err" });
+      const save = el("button", { class: "btn primary", type: "button", text: "Save" });
+      save.addEventListener("click", async function () {
+        err.textContent = "";
+        if (!Object.keys(pending).length) { err.textContent = "Nothing changed yet."; return; }
+        save.disabled = true;
+        const res = await api("PUT", "/api/models/" + spec.key, pending);
+        save.disabled = false;
+        if (!res.ok || !res.data.ok) {
+          err.textContent = (res.data && (res.data.detail || res.data.error)) || "Could not save that.";
+          return;
+        }
+        renderSettings();
+      });
+
+      const actions = el("div", { class: "row-actions" }, [save]);
+      if (spec.key === "llm") {
+        const test = el("button", { class: "btn", type: "button" }, [icon("sparkle", "i-sm"), "Test it"]);
+        const said = el("span", { class: "meta" });
+        test.addEventListener("click", async function () {
+          said.textContent = "asking…";
+          test.disabled = true;
+          const res = await api("POST", "/api/models/llm/test");
+          test.disabled = false;
+          if (res.data && res.data.ok) said.textContent = "It answered: " + (res.data.reply || "(nothing)");
+          else said.textContent = "No answer: " + ((res.data && res.data.detail) || "it did not work");
+        });
+        actions.appendChild(test);
+        actions.appendChild(said);
+      }
+
+      card.appendChild(el("label", { class: "field" }, ["Provider", provider]));
+      card.appendChild(rows);
+      card.appendChild(err);
+      card.appendChild(actions);
+      root.appendChild(card);
+      syncRows();
+    });
+
+    root.appendChild(el("p", { class: "note", text: "Changing any of this takes effect on the next message; it does not restart the hub. It also grants the assistant nothing new: what it may do is still decided by the policy on the host." }));
   }
 
   async function renderPreferences(root) {

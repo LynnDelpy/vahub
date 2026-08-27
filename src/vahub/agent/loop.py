@@ -84,6 +84,12 @@ class AgentLoop:
         self._timezone = timezone
         self._principal = principal
 
+    def set_llm(self, llm: LLMAdapter) -> None:
+        """Point the loop at a different model. The owner can change provider or
+        key from the web UI, and a turn that starts afterwards should use it; a
+        turn already in flight keeps the adapter it began with."""
+        self._llm = llm
+
     async def run_turn(
         self,
         session: Session,

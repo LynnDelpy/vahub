@@ -182,6 +182,9 @@ async def test_module_management_and_tool_calls_require_login(client) -> None:
     assert (await client.post("/api/tools/fake/echo", json={"args": {}})).status_code == 401
     # the control route (a play/pause button) is behind the same login
     assert (await client.post("/api/control/fake/add", json={"args": {}})).status_code == 401
+    # and so is choosing the model
+    assert (await client.get("/api/models")).status_code == 401
+    assert (await client.put("/api/models/llm", json={"model": "x"})).status_code == 401
 
 
 async def test_account_management_requires_login_before_it_requires_a_role(client) -> None:

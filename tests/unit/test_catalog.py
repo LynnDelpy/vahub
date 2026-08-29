@@ -10,15 +10,11 @@ from __future__ import annotations
 
 from typing import Any
 
-import pytest
-
 from vahub.agent.policy import Gate
 from vahub.config.models import PolicyConfig
 from vahub.contracts.manifest import Manifest
 from vahub.core.catalog import Catalog
 from vahub.core.supervisor import Module, State
-
-pytestmark = pytest.mark.unit
 
 
 def _module(

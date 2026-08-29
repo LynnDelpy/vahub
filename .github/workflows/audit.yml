@@ -1,0 +1,50 @@
+name: audit
+
+# Dependencies are audited on a timer rather than on every push, because a
+# vulnerability published on Tuesday is not a reason to fail an unrelated pull
+# request on Wednesday. It still runs on demand, and on a change to what we
+# depend on, which is the moment a new advisory can actually be introduced.
+on:
+  push:
+    branches: [main]
+    paths:
+      - pyproject.toml
+      - uv.lock
+      - .github/workflows/audit.yml
+  pull_request:
+    paths:
+      - pyproject.toml
+      - uv.lock
+  schedule:
+    - cron: "23 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: audit-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pip-audit:
+    name: known vulnerabilities
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: pyproject.toml
+
+      - name: Audit the installed dependency tree
+        # The hub is what gets installed on someone's machine, so the tree it
+        # actually resolves to is the thing worth auditing, not a hand-written
+        # list of direct dependencies. --skip-editable passes over vahub itself,
+        # which is not on PyPI and has no advisories to look up; --strict is left
+        # off because it turns that skip into a failure.
+        run: |
+          uv sync --all-extras
+          uv run --with pip-audit pip-audit --skip-editable --progress-spinner off

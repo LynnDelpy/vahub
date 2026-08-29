@@ -160,6 +160,21 @@ class ModuleAPI:
         decision = "allow-owner-write" if cls == "write" else "allow"
         return await self._dispatch(mod, tool, args, timeout_s, subject or "user", decision)
 
+    def effective_class(self, module: str, tool: str) -> ToolClass | None:
+        """What a tool counts as, all things considered: the stronger of what the
+        module declares in its manifest and what a policy rule says. None when
+        the module is not installed or does not declare the tool.
+
+        Everything that decides "is this dangerous?" has to ask the same
+        question, or the answers drift apart. They have before: the gate once
+        read the rule alone, so a rule that forgot `class: destructive` let a
+        destructive tool through with no confirmation. This is that lesson kept
+        in one place."""
+        mod = self._sup.modules.get(module)
+        if mod is None or mod.manifest is None:
+            return None
+        return self._owner_class(mod, tool)
+
     def _owner_class(self, mod: Module, tool: str) -> ToolClass | None:
         """The class that governs this tool on the owner path: the stronger of
         what the module declares in its manifest and what a policy rule says.

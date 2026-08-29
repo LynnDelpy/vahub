@@ -188,8 +188,14 @@ class Scheduler:
         # fires with no human. A deliberately scheduled destructive action still
         # belongs in the config file, which is the trusted boundary.
         for step in parsed:
+            # The stronger of the module's own declaration and the policy rule.
+            # Reading the rule alone would miss a tool the module itself calls
+            # destructive but that no rule names, which is exactly the shape of
+            # the bug this guard exists to prevent.
+            declared = self._api.effective_class(step.module, step.tool)
             rule = self._policy.rules.get(f"{step.module}.{step.tool}")
-            if rule is not None and rule.cls == "destructive":
+            rule_cls = rule.cls if rule is not None else None
+            if "destructive" in (declared, rule_cls):
                 return {
                     "ok": False,
                     "error": "destructive_not_schedulable",

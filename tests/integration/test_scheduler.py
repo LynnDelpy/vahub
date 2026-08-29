@@ -12,8 +12,18 @@ pytestmark = pytest.mark.integration
 
 
 class _DummyAPI:
+    """Stands in for the ModuleAPI. `declared` is what each module's own manifest
+    claims, which is a different question from what the policy rule says: the
+    scheduler has to consider both."""
+
+    def __init__(self, declared: dict[str, str] | None = None) -> None:
+        self.declared = declared or {}
+
     async def call(self, **_: object) -> dict:
         return {"ok": True}
+
+    def effective_class(self, module: str, tool: str) -> str | None:
+        return self.declared.get(f"{module}.{tool}")
 
 
 def _config(state_dir: Path, modules_dir: Path) -> Config:
@@ -79,6 +89,41 @@ async def test_a_destructive_step_is_refused(scheduler) -> None:
     step = {"module": "door", "tool": "unlock", "args": {"id": "front"}}
     result = await sched.add_dynamic("0 7 * * *", [step])
     assert result["ok"] is False and result["error"] == "destructive_not_schedulable"
+
+
+async def test_a_step_the_module_itself_calls_destructive_is_refused(
+    state_dir: Path, modules_dir: Path
+) -> None:
+    """The guard has to read the module's own declaration, not only the policy.
+
+    A tool a module declares destructive, that no rule names (or that a rule
+    classes more weakly), used to slip past this check: the rule was the only
+    thing consulted, and there was no rule. It could then be scheduled to run
+    unattended, which is the exact laundering this refusal exists to stop.
+    """
+    from vahub.core.bus import EventBus
+    from vahub.scheduler import Scheduler
+    from vahub.storage.store import Store
+
+    store = Store(state_dir / "declared.db")
+    await store.open()
+    api = _DummyAPI({"garage.open_everything": "destructive"})
+    sched = Scheduler(api, EventBus(), _config(state_dir, modules_dir), store=store)
+    try:
+        step = {"module": "garage", "tool": "open_everything", "args": {}}
+        result = await sched.add_dynamic("0 7 * * *", [step])
+        assert result["ok"] is False and result["error"] == "destructive_not_schedulable"
+        # and nothing was written: a refusal that still persisted the schedule
+        # would be worse than no refusal at all
+        assert await store.list_dyn_schedules() == []
+    finally:
+        await store.close()
+
+
+async def test_a_harmless_step_is_still_schedulable(scheduler) -> None:
+    sched, _store = scheduler
+    ok = await sched.add_dynamic("0 7 * * *", [{"module": "time", "tool": "now", "args": {}}])
+    assert ok["ok"] is True
 
 
 async def test_bad_cron_is_rejected(scheduler) -> None:

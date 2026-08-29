@@ -50,7 +50,7 @@ async def api_and_store(construct, state_dir: Path, modules_dir: Path):
     sup = Supervisor(bus, modules_dir=modules_dir, state_dir=state_dir, config_dir=modules_dir.parent)
     api = ModuleAPI(sup, gate=Gate(config.policy), store=store, bus=bus)
     scheduler = Scheduler(api, bus, config, store=store)
-    sup.modules[CORE_MODULE] = build_core_module(store, scheduler, sup)
+    sup.modules[CORE_MODULE] = build_core_module(store, scheduler, api)
     try:
         yield api, store
     finally:

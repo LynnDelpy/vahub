@@ -28,7 +28,7 @@ from .supervisor import Module, State
 if TYPE_CHECKING:
     from ..scheduler import Scheduler
     from ..storage.store import Store
-    from .supervisor import Supervisor
+    from .moduleapi import ModuleAPI
 
 CORE_MODULE = "core"
 
@@ -296,7 +296,7 @@ def _default_title(module: str, tool: str, args: dict[str, Any]) -> str:
     return label
 
 
-def _handlers(store: Store, scheduler: Scheduler, supervisor: Supervisor) -> dict[str, Handler]:
+def _handlers(store: Store, scheduler: Scheduler, moduleapi: ModuleAPI) -> dict[str, Handler]:
     async def list_locations(_: dict[str, Any]) -> Any:
         return {"locations": await store.list_locations()}
 
@@ -379,11 +379,14 @@ def _handlers(store: Store, scheduler: Scheduler, supervisor: Supervisor) -> dic
         # A card reads through the owner read-tool path, which runs only tools a
         # module declares read. Refuse anything else up front, so a pinned card
         # cannot be a write and cannot be a tool that does not exist.
-        mod = supervisor.modules.get(module)
-        spec = mod.manifest.tools.get(tool) if (mod is not None and mod.manifest is not None) else None
-        if spec is None:
+        # The same question the card's render path will ask, asked here: pinning
+        # a card that can never draw itself is not a favour to anyone. It is the
+        # stronger of the module's declaration and the policy rule, so a rule
+        # that reclassifies a tool keeps it off the dashboard too.
+        declared = moduleapi.effective_class(module, tool)
+        if declared is None:
             raise BuiltinError(f"{module}.{tool} is not an installed tool")
-        if spec.cls != "read":
+        if declared != "read":
             raise BuiltinError(f"{module}.{tool} is not a read tool, so it cannot back a card")
         raw_args = a.get("args")
         args: dict[str, Any] = raw_args if isinstance(raw_args, dict) else {}
@@ -434,7 +437,7 @@ def _handlers(store: Store, scheduler: Scheduler, supervisor: Supervisor) -> dic
     }
 
 
-def build_core_module(store: Store, scheduler: Scheduler, supervisor: Supervisor) -> Module:
+def build_core_module(store: Store, scheduler: Scheduler, moduleapi: ModuleAPI) -> Module:
     """Assemble the synthetic `core` module: a manifest, a live tool list for the
     catalog, and an in-process client. It is inserted into the supervisor's module
     map and is ready from the start."""
@@ -454,6 +457,6 @@ def build_core_module(store: Store, scheduler: Scheduler, supervisor: Supervisor
     return Module(
         manifest=manifest,
         state=State.READY,
-        client=BuiltinClient(_handlers(store, scheduler, supervisor)),  # type: ignore[arg-type]
+        client=BuiltinClient(_handlers(store, scheduler, moduleapi)),  # type: ignore[arg-type]
         tools=tools,
     )

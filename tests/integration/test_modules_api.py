@@ -292,3 +292,25 @@ async def test_the_browser_is_told_about_a_speech_change(client, rt) -> None:
     assert (await client.get("/api/client-config")).json()["stt_provider"] == "browser"
     await client.put("/api/models/stt", json={"provider": "openai_compat", "model": "whisper-1"})
     assert (await client.get("/api/client-config")).json()["stt_provider"] == "openai_compat"
+
+
+async def test_a_stored_model_setting_that_cannot_be_used_does_not_stop_the_hub(rt) -> None:
+    """Refusing to start over a bad stored value would lock the owner out of the
+    page that fixes it, so the running configuration is kept and the failure is
+    logged instead."""
+    before = rt.models.llm.provider
+    # Write straight past the route's validation, as a hand-edited database or a
+    # downgrade to an older build could.
+    await rt.store.set_model_config("llm", "provider", "a-provider-that-never-existed")
+    await rt.apply_model_config()
+    assert rt.models.llm.provider == before
+    assert rt.llm is not None
+
+
+async def test_a_stale_field_in_the_database_is_ignored(rt) -> None:
+    """A field the UI once offered and no longer does must not reach the config
+    model, which would refuse the whole thing and take the rest down with it."""
+    await rt.store.set_model_config("llm", "some_removed_field", "whatever")
+    await rt.store.set_model_config("llm", "model", "still-applies")
+    effective = await rt.effective_model_config()
+    assert effective.llm.model == "still-applies"

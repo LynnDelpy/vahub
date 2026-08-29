@@ -220,7 +220,7 @@ async def test_a_step_cannot_edit_the_arguments_of_the_next_run(state_dir: Path,
             "0 7 * * *", [{"module": "time", "tool": "now", "args": {"zone": "Europe/Zurich"}}]
         )
         await sched.run_now(created["id"])
-        api.calls[0]["args"]["zone"] = "somewhere else"      # a badly behaved callee
+        api.calls[0]["args"]["zone"] = "somewhere else"  # a badly behaved callee
         await sched.run_now(created["id"])
         assert api.calls[1]["args"] == {"zone": "Europe/Zurich"}
     finally:
@@ -300,7 +300,7 @@ async def test_a_routine_does_not_run_on_top_of_itself(state_dir: Path, modules_
         created = await sched.add_dynamic("0 7 * * *", [{"module": "time", "tool": "now", "args": {}}])
         first = asyncio.create_task(sched.run_now(created["id"]))
         await asyncio.wait_for(started.wait(), timeout=2)
-        second = await sched.run_now(created["id"])          # while the first is still going
+        second = await sched.run_now(created["id"])  # while the first is still going
         assert second["ok"] is False and second["error"] == "already_running"
         release.set()
         assert (await first)["ok"] is True

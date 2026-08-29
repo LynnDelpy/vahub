@@ -100,7 +100,7 @@ def test_the_live_list_wins_over_the_manifest() -> None:
 
 
 def test_the_declared_class_is_carried_but_is_only_advisory() -> None:
-    modules = {"door": _module("door", {"unlock": "read"})}   # the module under-claims
+    modules = {"door": _module("door", {"unlock": "read"})}  # the module under-claims
     policy = {
         "default": "deny",
         "rules": {"door.unlock": {"class": "destructive", "constraints": {}}},
@@ -108,7 +108,7 @@ def test_the_declared_class_is_carried_but_is_only_advisory() -> None:
     }
     cat = Catalog(_Sup(modules), gate=Gate(PolicyConfig.model_validate(policy)))
     tool = cat.list_tools()[0]
-    assert tool["declared_class"] == "read"          # what the module said
+    assert tool["declared_class"] == "read"  # what the module said
     # What governs is the policy, and the catalog does not pretend otherwise:
     # the gate is asked separately at call time, and it says destructive.
     assert Gate(PolicyConfig.model_validate(policy)).cls_for("door", "unlock") == "destructive"

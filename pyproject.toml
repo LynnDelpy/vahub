@@ -43,6 +43,9 @@ dev = [
   "ruff>=0.5",
   "mypy>=1.10",
   "types-PyYAML",
+  # CONTRIBUTING tells you to run `uv run pre-commit install`, which only works
+  # if it is here.
+  "pre-commit>=3.7",
 ]
 
 [project.scripts]

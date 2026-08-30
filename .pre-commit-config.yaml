@@ -57,3 +57,26 @@ repos:
         language: pygrep
         files: ^src/vahub/web/.*\.(js|html)$
         entry: '(\.innerHTML\s*=.*(\$\{|\+)|insertAdjacentHTML)'
+
+  # The slow checks, before a push rather than before every commit. They run
+  # with CI's exact flags on purpose: a plain `pytest` does not enforce
+  # --strict-markers, so a test using a marker nobody registered passes here and
+  # fails there, which is a bad way to find out.
+  #
+  # Install them with: pre-commit install --hook-type pre-push
+  - repo: local
+    hooks:
+      - id: mypy
+        name: mypy
+        language: system
+        types: [python]
+        pass_filenames: false
+        stages: [pre-push]
+        entry: uv run mypy src/vahub
+
+      - id: pytest
+        name: pytest (with CI's flags)
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
+        entry: uv run pytest --strict-markers --strict-config -W error::RuntimeWarning -q

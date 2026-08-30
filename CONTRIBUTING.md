@@ -21,7 +21,7 @@ The project uses [uv](https://docs.astral.sh/uv/). Install it, then:
 git clone https://github.com/LynnDelpy/vahub
 cd vahub
 uv sync --extra dev
-uv run pre-commit install
+uv run pre-commit install --hook-type pre-commit --hook-type pre-push
 ```
 
 `uv sync` creates `.venv`, installs the runtime and development dependencies,
@@ -56,6 +56,16 @@ cheap guards: no private keys, no strings that look like live credentials, no
 `shell=True`, no HTML interpolation in the assistant page assets. Run it over
 everything once with `uv run pre-commit run --all-files`, and update the pinned
 hook versions with `uv run pre-commit autoupdate`.
+
+The slow two, mypy and the tests, run on push rather than on every commit, which
+is why the install line above asks for both hook types. They run with the flags
+CI uses, and that detail matters more than it looks: a plain `uv run pytest` does
+not enforce `--strict-markers`, so a test that marks itself with something nobody
+registered passes on your machine and fails in CI. Run them yourself with:
+
+```bash
+uv run pre-commit run --hook-stage pre-push --all-files
+```
 
 Tests are in `tests/`, split three ways:
 

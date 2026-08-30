@@ -382,6 +382,37 @@ class Installer:
             return destination
         return self._git_checkout(source, staging, destination)
 
+    def _refuse_a_branch(self, source: GitSource, clone: Path) -> None:
+        """Refuse a rev that is a branch on the remote.
+
+        The parser rejects the obvious ones (main, master, HEAD, refs/heads/...),
+        but it only ever sees a string: `develop` and `v1.2.3` are the same shape,
+        and it cannot tell which is a tag. The remote can. Asking it here is the
+        only place the answer exists, and it is what makes "a git source must be
+        pinned" true rather than merely mostly true: installing a branch means
+        installing whatever that branch says today, and reinstalling later gets
+        something else with the same name.
+
+        A sha is not a branch, so that case is skipped. A failure to ask is not
+        treated as a refusal: an offline mirror that cannot answer should not
+        block an install that has already been fetched and checked out.
+        """
+        if _SHA_RE.match(source.rev):
+            return
+        try:
+            listed = self._run(
+                ["git", "-C", str(clone), "ls-remote", "--heads", "origin", source.rev],
+                what="git ls-remote",
+            )
+        except InstallError:
+            self._say("could not ask the remote whether that rev is a branch; continuing")
+            return
+        if listed.stdout.strip():
+            raise InstallError(
+                f"rev {source.rev!r} is a branch on {source.url}; pin a tag or a commit sha "
+                f"so the same install can be repeated (this one resolved to {source.rev})"
+            )
+
     def _git_checkout(self, source: GitSource, staging: Path, destination: Path) -> Path:
         for label, value in (("url", source.url), ("rev", source.rev), ("subdir", source.subdir)):
             _check_argument(label, value)
@@ -418,6 +449,7 @@ class Installer:
         self._say(f"resolved {source.rev} to commit {resolved_commit}")
         if _SHA_RE.match(source.rev) and resolved_commit != source.rev:
             raise InstallError(f"checked out {resolved_commit} but the source pins {source.rev}")
+        self._refuse_a_branch(source, clone)
 
         root = clone if not source.subdir else clone / source.subdir
         resolved = root.resolve()

@@ -15,7 +15,7 @@ from pathlib import Path
 import pytest
 
 from vahub.config.models import Config
-from vahub.modules.installer import InstallError, Installer
+from vahub.modules.installer import Installer, InstallError
 
 pytestmark = pytest.mark.integration
 

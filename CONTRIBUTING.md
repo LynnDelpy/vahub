@@ -57,11 +57,13 @@ cheap guards: no private keys, no strings that look like live credentials, no
 everything once with `uv run pre-commit run --all-files`, and update the pinned
 hook versions with `uv run pre-commit autoupdate`.
 
-The slow two, mypy and the tests, run on push rather than on every commit, which
-is why the install line above asks for both hook types. They run with the flags
-CI uses, and that detail matters more than it looks: a plain `uv run pytest` does
-not enforce `--strict-markers`, so a test that marks itself with something nobody
-registered passes on your machine and fails in CI. Run them yourself with:
+All four run again on push, over the whole tree, which is why the install line
+above asks for both hook types. Two details there are deliberate. They use CI's
+flags, because a plain `uv run pytest` does not enforce `--strict-markers`, so a
+test marked with something undeclared passes on your machine and fails in CI. And
+they look at everything rather than at what you touched, because the commit-stage
+hooks only see staged files, which helps nobody if the hooks were never
+installed. Run them yourself with:
 
 ```bash
 uv run pre-commit run --hook-stage pre-push --all-files

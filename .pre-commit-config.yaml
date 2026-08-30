@@ -58,14 +58,32 @@ repos:
         files: ^src/vahub/web/.*\.(js|html)$
         entry: '(\.innerHTML\s*=.*(\$\{|\+)|insertAdjacentHTML)'
 
-  # The slow checks, before a push rather than before every commit. They run
-  # with CI's exact flags on purpose: a plain `pytest` does not enforce
-  # --strict-markers, so a test using a marker nobody registered passes here and
-  # fails there, which is a bad way to find out.
+  # Before a push: all four of CI's checks, over the whole tree, with CI's exact
+  # flags. Not two of them, and not "the files this commit touched".
   #
-  # Install them with: pre-commit install --hook-type pre-push
+  # Both halves of that sentence were learned the hard way in one afternoon. A
+  # plain `pytest` does not enforce --strict-markers, so a test marked with
+  # something undeclared passes here and fails there. And ruff at the commit
+  # stage only sees staged files, which is no help at all if the hooks were
+  # never installed: a push then carries lint errors nothing local looked at.
+  #
+  # Install with: pre-commit install --hook-type pre-commit --hook-type pre-push
   - repo: local
     hooks:
+      - id: ruff-check-all
+        name: ruff check (whole tree, as CI runs it)
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
+        entry: uv run ruff check .
+
+      - id: ruff-format-all
+        name: ruff format --check (whole tree, as CI runs it)
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
+        entry: uv run ruff format --check .
+
       - id: mypy
         name: mypy
         language: system

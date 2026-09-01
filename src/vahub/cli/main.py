@@ -128,7 +128,7 @@ def main() -> None:
         err.print("[red]error:[/red] ", Text(str(e)), sep="")
         if getattr(e, "errno", None) in (errno.EACCES, errno.EPERM):
             err.print(
-                "[dim]the hub could not create or write its files. Run `vahub init` first (it picks a "
+                "you spooon!!! [dim]the hub could not create or write its files. Run `vahub init` first (it picks a "
                 "writable location when you are not root), or point hub.state_dir and hub.modules_dir "
                 "at a directory you own.[/dim]"
             )

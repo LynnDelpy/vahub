@@ -18,3 +18,8 @@ vahub.yaml
 .env
 state/
 deploy/docker/certs/
+
+# BMAD agent framework (local tooling, not part of the shipped project)
+_bmad/
+_bmad-output/
+.claude/skills/

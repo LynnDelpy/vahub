@@ -401,7 +401,10 @@ class ModuleAPI:
                     # The frozen arguments, so the person approving sees exactly
                     # what will run. They already passed the gate (so they are
                     # bounded by its constraints); the page inserts them as text.
-                    "args": args,
+                    # Redacted like the audit row: this goes to every subscriber
+                    # of the event, and a value the manifest calls a secret is
+                    # not something the approver needs in order to decide.
+                    "args": _redact(args, self._redact_keys(module)),
                     "principal": principal,
                     "reason": reason,
                     "ttl_s": self._confirm_ttl_s,
@@ -462,9 +465,23 @@ def _ms(t0: float) -> float:
 
 
 def _redact(args: dict[str, Any], keys: list[str]) -> dict[str, Any]:
+    """Replace every declared secret with a marker, at any depth.
+
+    A tool's inputSchema may nest objects and arrays, so a key the manifest named
+    under `audit.redact` can sit inside one. A flat pass over the top level would
+    write those through verbatim.
+    """
     if not keys:
         return args
-    return {k: ("***" if k in keys else v) for k, v in args.items()}
+
+    def walk(value: Any) -> Any:
+        if isinstance(value, dict):
+            return {k: ("***" if k in keys else walk(v)) for k, v in value.items()}
+        if isinstance(value, list):
+            return [walk(v) for v in value]
+        return value
+
+    return {k: ("***" if k in keys else walk(v)) for k, v in args.items()}
 
 
 def _unwrap(payload: Any) -> Any:

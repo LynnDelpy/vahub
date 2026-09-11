@@ -340,6 +340,34 @@ async def test_the_audit_log_records_arguments_and_duration(write_manifest, read
     assert row["duration_ms"] is not None and row["duration_ms"] >= 0
 
 
+async def test_the_confirmation_event_is_redacted_like_the_audit_row(
+    write_manifest, ready, api, bus, collect
+) -> None:
+    # The event goes to every subscriber of the bus, which is a wider audience
+    # than the audit table. A value the manifest calls a secret was being
+    # redacted from the log and published verbatim on the card.
+    events = collect(bus, "policy.confirmation_required")
+    write_manifest()
+    await ready()
+
+    await api.call(module="fake", tool="secretive", args={"secret": "hunter2"}, principal="agent")
+    await asyncio.sleep(0.05)
+
+    assert [e["args"] for e in events] == [{"secret": "***"}]
+
+
+async def test_a_secret_nested_inside_an_argument_is_redacted_too(write_manifest, ready, api) -> None:
+    # A tool's inputSchema may nest objects and arrays, so a declared key can sit
+    # below the top level. A flat pass over the first level wrote those through.
+    from vahub.core.moduleapi import _redact
+
+    redacted = _redact(
+        {"secret": "a", "body": {"secret": "b", "keep": 1}, "items": [{"secret": "c"}]}, ["secret"]
+    )
+
+    assert redacted == {"secret": "***", "body": {"secret": "***", "keep": 1}, "items": [{"secret": "***"}]}
+
+
 async def test_redacted_arguments_do_not_reach_the_audit_log(write_manifest, ready, api, store) -> None:
     # The manifest asks for `secret` to be redacted. The module still receives
     # the real value; the log that survives the call does not.

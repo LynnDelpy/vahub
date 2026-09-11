@@ -30,6 +30,7 @@ import time
 from collections import defaultdict
 from collections.abc import Mapping
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, HTTPException, Request, Response
@@ -313,7 +314,7 @@ def build_router(rt: Runtime) -> APIRouter:
         # deliberately expensive, GIL-holding C call, so it runs in a thread: on
         # the event loop it would freeze every other request for its duration,
         # and a flood of logins would be a denial of service.
-        stored = (user or {}).get("password_hash") or _DUMMY_HASH
+        stored = (user or {}).get("password_hash") or _dummy_hash()
         ok = await asyncio.to_thread(verify_password, body.password, stored)
         if user is None or user.get("disabled") or not ok:
             throttle.record_failure(key, now)
@@ -345,4 +346,13 @@ def build_router(rt: Runtime) -> APIRouter:
 
 # A fixed, valid scrypt hash used only to keep the failure path's timing similar
 # to the success path. It matches no real password.
-_DUMMY_HASH = hash_password(secrets.token_urlsafe(16))
+@lru_cache(maxsize=1)
+def _dummy_hash() -> str:
+    """A throwaway hash to verify against when the username does not exist.
+
+    Built on first use, not at import: it is a 32 MiB scrypt costing about 60ms,
+    and importing this module happens on every CLI command and every test that
+    touches the web package, including when `web.auth.enabled` is false and no
+    login can ever be attempted.
+    """
+    return hash_password(secrets.token_urlsafe(16))

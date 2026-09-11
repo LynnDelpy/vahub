@@ -103,6 +103,67 @@ def test_a_rule_cannot_downgrade_a_manifest_declared_class(make_gate) -> None:
     assert outcome(elevated) == "confirm" and elevated.cls == "destructive"
 
 
+def test_a_manifest_raised_class_that_nobody_confirms_is_denied(make_gate) -> None:
+    # Raising the class is only a confirmation if some principal confirms that
+    # class. Here nothing does, and the config validator cannot catch it: it
+    # reads the class written in the rule, which is `read`, so a policy whose
+    # only destructive tool is destructive by its MANIFEST loads with no agent
+    # principal at all. The gate is the last place that can refuse, so it fails
+    # closed rather than dispatching a door unlock with no human.
+    gate = make_gate(
+        {
+            "default": "deny",
+            "principals": {},
+            "rules": {"door.unlock": {"constraints": {"id": {"max_len": 10}}}},
+        }
+    )
+
+    d = gate.evaluate("agent", "door", "unlock", {"id": "front"}, declared_cls="destructive")
+
+    assert outcome(d) == "deny"
+    assert d.cls == "destructive"
+    # The reason names the two edits that fix the policy.
+    assert "class: destructive" in d.reason and "confirm" in d.reason
+
+
+def test_a_manifest_raised_class_a_principal_confirms_nothing_of_is_denied(make_gate) -> None:
+    # Same hole, one step less obvious: the principal exists and confirms a
+    # weaker class, so the escalated one still falls through its confirm list.
+    gate = make_gate(
+        {
+            "default": "deny",
+            "principals": {"agent": {"confirm": ["write"], "deny": []}},
+            "rules": {"door.unlock": {"constraints": {"id": {"max_len": 10}}}},
+        }
+    )
+
+    assert (
+        outcome(gate.evaluate("agent", "door", "unlock", {"id": "front"}, declared_cls="destructive"))
+        == "deny"
+    )
+
+
+def test_a_class_the_operator_wrote_in_the_rule_is_not_second_guessed(make_gate) -> None:
+    # Only a class the MANIFEST raised fails closed. Where the operator wrote
+    # `class:` themselves they described this action deliberately and the
+    # validator already had its say, so a principal with an empty confirm list
+    # still runs it. That is the configured routine, not the model.
+    gate = make_gate(
+        {
+            "default": "deny",
+            "principals": {
+                "agent": {"confirm": ["destructive"], "deny": []},
+                "scheduler": {"confirm": [], "deny": []},
+            },
+            "rules": {"door.unlock": {"class": "destructive", "constraints": {"id": {"max_len": 10}}}},
+        }
+    )
+
+    d = gate.evaluate("scheduler", "door", "unlock", {"id": "front"}, declared_cls="destructive")
+
+    assert outcome(d) == "allow"
+
+
 def test_a_rule_class_stronger_than_the_manifest_is_kept(make_gate) -> None:
     # The reconciliation takes the stronger of the two, so an operator can still
     # tighten a tool the module only declares write up to destructive.

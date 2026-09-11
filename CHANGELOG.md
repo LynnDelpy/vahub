@@ -73,7 +73,30 @@ registry entry is listed under Changed with what an operator has to do.
   documentation moved to its own repository, so anyone following the link from
   PyPI got a 404. It points at vahub-docs now.
 
+* **A destructive action could run with no confirmation when the module, not the
+  policy, was what called it destructive.** The loader refuses a policy where a
+  rule written `class: destructive` is reachable by the agent unconfirmed, but it
+  reads only the class written in the rule. Where the manifest was the thing
+  declaring a tool destructive and the operator's rule omitted `class:`, the gate
+  raised the class for the audit record and then allowed the call, because a
+  raised class only asks for a confirmation if some principal lists that class.
+  The gate now refuses a class it raised that nobody confirms, and says which two
+  lines to add.
+
+* **The approval card showed values the audit log redacts.** The confirmation
+  event carried the raw arguments while the audit row ran them through the
+  manifest's `audit.redact` keys, so a declared secret was kept out of the log
+  and handed to every subscriber of the event. Redaction now also reaches
+  secrets nested inside an argument object or array, which a single pass over
+  the top level wrote through untouched.
+
 ### Changed
+
+* **The default `web.origin_allowlist` now names both loopback spellings.** The
+  hub binds `127.0.0.1`, but only `http://localhost:8080` was allowed, so a
+  console opened at `http://127.0.0.1:8080` answered 403 to every POST with
+  nothing on the page saying why. An `origin_allowlist` you set yourself is
+  unaffected.
 
 * Store schema v4 adds `users.role`. Accounts that already exist become admins:
   they were created under the old rule, where signing in meant full rights, so

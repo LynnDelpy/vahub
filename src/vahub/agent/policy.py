@@ -112,9 +112,9 @@ class Gate:
         # be able to DOWNGRADE below it: a rule that omits `class:` defaults to
         # read, and without this a manifest-destructive tool ruled that way would
         # skip the confirmation it needs. Permission still comes from the rule
-        # alone (the manifest can never grant access); the manifest can only raise
-        # the class, which only ever adds a confirmation. So the effective class is
-        # the stronger of the two.
+        # alone (the manifest can never grant access). So the effective class is
+        # the stronger of the two, and a raised one is refused below unless the
+        # principal actually confirms it.
         cls: ToolClass = _stronger(rule_cls, declared_cls)
 
         if self._denied_by_principal(principal, key):
@@ -152,6 +152,20 @@ class Gate:
             return Decision(
                 "confirm",
                 f"{key} is a {cls} action and principal {principal!r} must confirm it",
+                cls,
+            )
+        if cls != rule_cls:
+            # The manifest raised the class and nothing confirms the raised one,
+            # so the escalation above would be inert: allow, for an action the
+            # operator never described as this class. PolicyConfig cannot catch
+            # this at load because it reads the class written in the rule, and
+            # the manifest can change under a running hub anyway. Fail closed.
+            return Decision(
+                "deny",
+                f"{key} is {cls} in its module's manifest but policy.rules.{key!r} declares "
+                f"{rule_cls}, and principal {principal!r} confirms no {cls} action; add "
+                f"`class: {cls}` to the rule and `confirm: [{cls}]` to "
+                f"policy.principals.{principal}",
                 cls,
             )
         return Decision("allow", "", cls)

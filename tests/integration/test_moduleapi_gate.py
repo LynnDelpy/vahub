@@ -368,6 +368,25 @@ async def test_a_secret_nested_inside_an_argument_is_redacted_too(write_manifest
     assert redacted == {"secret": "***", "body": {"secret": "***", "keep": 1}, "items": [{"secret": "***"}]}
 
 
+async def test_creating_a_confirmation_sweeps_the_timed_out_ones(
+    construct, write_manifest, ready, supervisor, gate, store, bus, api
+) -> None:
+    # `expire_pending` had no caller anywhere, so a timed-out row stayed at
+    # status 'pending' for ever and the table only grew.
+    write_manifest()
+    await ready()
+    brief = construct(ModuleAPI, supervisor=supervisor, gate=gate, store=store, bus=bus, confirm_ttl_s=0.01)
+    stale = (await brief.call(module="fake", tool="secretive", args={"secret": "old"}, principal="agent"))[
+        "pending_id"
+    ]
+    await asyncio.sleep(0.05)
+
+    # A second confirmation is what does the sweeping.
+    await api.call(module="fake", tool="secretive", args={"secret": "new"}, principal="agent")
+
+    assert (await store.get_pending(stale))["status"] == "expired"
+
+
 async def test_redacted_arguments_do_not_reach_the_audit_log(write_manifest, ready, api, store) -> None:
     # The manifest asks for `secret` to be redacted. The module still receives
     # the real value; the log that survives the call does not.

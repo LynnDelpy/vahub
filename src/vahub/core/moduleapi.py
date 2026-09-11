@@ -390,6 +390,10 @@ class ModuleAPI:
     ) -> str:
         pending_id = uuid.uuid4().hex
         if self._store is not None:
+            # Sweep timed-out rows as new ones are created, the way a successful
+            # login sweeps sessions. Nothing else calls this, so without it the
+            # table only grows and `expired` is a status no row ever reaches.
+            await self._store.expire_pending()
             await self._store.create_pending(pending_id, principal, module, tool, args, self._confirm_ttl_s)
         if self._bus is not None:
             self._bus.publish(

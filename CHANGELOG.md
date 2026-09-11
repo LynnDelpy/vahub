@@ -68,6 +68,11 @@ registry entry is listed under Changed with what an operator has to do.
   thread, the session id, and the cached app/settings panels are all cleared on
   sign-out and on a session that expires mid-use.
 
+* **The Documentation link on the package page pointed nowhere.** It named
+  `vahub/tree/main/docs`, a directory that stopped existing when the
+  documentation moved to its own repository, so anyone following the link from
+  PyPI got a 404. It points at vahub-docs now.
+
 ### Changed
 
 * Store schema v4 adds `users.role`. Accounts that already exist become admins:

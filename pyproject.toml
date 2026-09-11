@@ -56,7 +56,7 @@ vahub = "vahub.cli.main:main"
 
 [project.urls]
 Homepage = "https://github.com/LynnDelpy/vahub"
-Documentation = "https://github.com/LynnDelpy/vahub/tree/main/docs"
+Documentation = "https://github.com/LynnDelpy/vahub-docs"
 Issues = "https://github.com/LynnDelpy/vahub/issues"
 Modules = "https://github.com/LynnDelpy/vahub-modules"
 

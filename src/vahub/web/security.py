@@ -13,11 +13,12 @@ Two decisions worth stating:
   request and to same-origin POSTs; its absence means a non-browser client
   (curl, a script on the box), which cannot be tricked into riding an operator's
   session because there is no session to ride.
-* An Origin that matches the request's own Host is allowed regardless of the
-  allowlist. A hostile page cannot forge Origin, so an Origin naming this very
-  server came from a page this server served. This removes the usual footgun
-  where the console is opened on http://127.0.0.1:8080 while the allowlist says
-  http://localhost:8080 and every POST fails with 403.
+* The allowlist is the whole rule. An earlier version also trusted any Origin
+  equal to the request's own Host, to save the operator from listing their
+  address; that is a DNS-rebinding hole, and `origin_allowed` says why. The cost
+  is that an address the browser actually uses must be listed: a console opened
+  on http://127.0.0.1:8080 while the allowlist names only http://localhost:8080
+  gets 403 on every POST, and the fix is to list both.
 
 The subject header is informational. It is recorded in the audit log as the
 acting principal and is never an authorization input, because anything that can

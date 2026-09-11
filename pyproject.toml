@@ -43,6 +43,9 @@ dev = [
   "ruff>=0.5",
   "mypy>=1.10",
   "types-PyYAML",
+  # starlette's TestClient imports httpx2 first and falls back to httpx with a
+  # deprecation warning; the fallback is the branch being removed, not kept.
+  "httpx2>=2.12",
   # CONTRIBUTING tells you to run `uv run pre-commit install`, which only works
   # if it is here.
   "pre-commit>=3.7",

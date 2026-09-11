@@ -128,6 +128,19 @@ async def test_an_allowed_origin_gets_through(client) -> None:
     assert response.status_code == 200
 
 
+async def test_an_origin_equal_to_the_request_host_is_still_refused(client) -> None:
+    # The rule used to trust any Origin matching the request's own Host, which is
+    # a DNS-rebinding hole: a page the operator visits rebinds its own hostname
+    # to the hub's address and then presents a matching Origin and Host. The
+    # client reaches the hub as "testserver", which the allowlist does not name,
+    # so an Origin naming it is refused like any other stranger.
+    response = await client.post(
+        "/api/chat", json={"message": "hello"}, headers={"origin": "http://testserver"}
+    )
+
+    assert response.status_code == 403
+
+
 async def test_a_request_without_an_origin_is_a_non_browser_client(client) -> None:
     # curl and scripts send no Origin and have no session to ride.
     assert (await client.post("/api/chat", json={"message": "hello"})).status_code == 200

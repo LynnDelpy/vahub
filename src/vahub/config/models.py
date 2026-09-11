@@ -98,7 +98,14 @@ class WebConfig(Strict):
     # Browser origins allowed to call the API. Same-origin does not stop a
     # cross-origin POST, and it does not apply to WebSockets at all, so this is
     # checked explicitly on both. "*" disables the check.
-    origin_allowlist: list[str] = Field(default_factory=lambda: ["http://localhost:8080"])
+    #
+    # Both loopback spellings ship by default because the allowlist is the whole
+    # rule (see web/security.py): the hub binds loopback, and an operator who
+    # opens it at 127.0.0.1 rather than localhost would otherwise get 403 on
+    # every POST with nothing on the page saying why.
+    origin_allowlist: list[str] = Field(
+        default_factory=lambda: ["http://localhost:8080", "http://127.0.0.1:8080"]
+    )
     # Header the authenticating reverse proxy sets. Recorded in the audit log as
     # the acting principal. Informational: it is never an authorization input.
     auth_subject_header: str = "X-Auth-Subject"
